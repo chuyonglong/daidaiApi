@@ -17,9 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Button, Modal, Space, TextArea, Typography } from '@douyinfe/semi-ui';
-import { IconCode, IconCopy, IconSave } from '@douyinfe/semi-icons';
+import { IconCode, IconCopy, IconSave, IconUpload } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
 import { API, showError, showSuccess } from '../../../../helpers';
 
@@ -166,6 +166,7 @@ const BatchCreateChannelsModal = ({ visible, onCancel, refresh }) => {
   const { t } = useTranslation();
   const [jsonValue, setJsonValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef(null);
 
   const validation = useMemo(
     () => validateBatchCreateJson(jsonValue),
@@ -184,6 +185,38 @@ const BatchCreateChannelsModal = ({ visible, onCancel, refresh }) => {
 
   const fillExample = () => {
     setJsonValue(BATCH_CREATE_EXAMPLE);
+  };
+
+  const importJsonFile = () => {
+    inputRef.current?.click();
+  };
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const nextValidation = validateBatchCreateJson(text);
+      setJsonValue(text);
+
+      if (nextValidation.channels) {
+        showSuccess(
+          t('已从 {{name}} 导入 {{count}} 个渠道', {
+            count: nextValidation.channels.length,
+            name: file.name,
+          }),
+        );
+      } else {
+        showError(t(nextValidation.error.key, nextValidation.error.values));
+      }
+    } catch {
+      showError(t('读取 JSON 文件失败：{{name}}', { name: file.name }));
+    }
   };
 
   const formatJson = () => {
@@ -252,6 +285,23 @@ const BatchCreateChannelsModal = ({ visible, onCancel, refresh }) => {
         </Text>
 
         <Space wrap>
+          <input
+            ref={inputRef}
+            type='file'
+            accept='.json,application/json'
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+            disabled={submitting}
+          />
+          <Button
+            size='small'
+            type='tertiary'
+            icon={<IconUpload />}
+            disabled={submitting}
+            onClick={importJsonFile}
+          >
+            {t('导入 JSON 文件')}
+          </Button>
           <Button
             size='small'
             type='tertiary'

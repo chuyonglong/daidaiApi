@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import { type ChangeEvent, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Braces, FileText, Loader2, Upload, Wand2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
