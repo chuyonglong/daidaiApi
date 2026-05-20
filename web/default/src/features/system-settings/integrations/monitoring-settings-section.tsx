@@ -46,6 +46,24 @@ const numericString = z.string().refine((value) => {
   return !Number.isNaN(Number(trimmed)) && Number(trimmed) >= 0
 }, 'Enter a non-negative number or leave empty')
 
+function parseErrorCodeRules(value: string) {
+  const tokens = value
+    .replace(/\uFF0C/g, ',')
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean)
+  const invalidTokens = tokens.filter((token) => /\s|,/.test(token))
+  const normalized = Array.from(new Set(tokens))
+    .sort((a, b) => a.localeCompare(b))
+    .join(',')
+
+  return {
+    ok: invalidTokens.length === 0,
+    invalidTokens,
+    normalized,
+  }
+}
+
 const monitoringSchema = z
   .object({
     ChannelDisableThreshold: numericString,
@@ -55,6 +73,7 @@ const monitoringSchema = z
     AutomaticDisableKeywords: z.string(),
     AutomaticDisableStatusCodes: z.string(),
     AutomaticRetryStatusCodes: z.string(),
+    AutomaticRetryErrorCodes: z.string(),
     monitor_setting: z.object({
       auto_test_channel_enabled: z.boolean(),
       auto_test_channel_minutes: z.coerce
@@ -89,6 +108,19 @@ const monitoringSchema = z
         )}`,
       })
     }
+
+    const retryErrorParsed = parseErrorCodeRules(
+      values.AutomaticRetryErrorCodes
+    )
+    if (!retryErrorParsed.ok) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AutomaticRetryErrorCodes'],
+        message: `Invalid error code rules: ${retryErrorParsed.invalidTokens.join(
+          ', '
+        )}`,
+      })
+    }
   })
 
 type MonitoringFormValues = z.output<typeof monitoringSchema>
@@ -103,6 +135,7 @@ type MonitoringSettingsSectionProps = {
     AutomaticDisableKeywords: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
+    AutomaticRetryErrorCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
   }
@@ -120,6 +153,7 @@ type NormalizedMonitoringValues = {
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
+  AutomaticRetryErrorCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
 }
@@ -136,6 +170,7 @@ const buildFormDefaults = (
   ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
+  AutomaticRetryErrorCodes: defaults.AutomaticRetryErrorCodes ?? '',
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
@@ -160,6 +195,9 @@ const normalizeDefaults = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     defaults.AutomaticRetryStatusCodes ?? ''
   ).normalized,
+  AutomaticRetryErrorCodes: parseErrorCodeRules(
+    defaults.AutomaticRetryErrorCodes ?? ''
+  ).normalized,
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
@@ -182,6 +220,8 @@ const normalizeFormValues = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     values.AutomaticRetryStatusCodes
   ).normalized,
+  AutomaticRetryErrorCodes: parseErrorCodeRules(values.AutomaticRetryErrorCodes)
+    .normalized,
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
@@ -211,6 +251,7 @@ export function MonitoringSettingsSection({
 
   const autoDisableStatusCodes = form.watch('AutomaticDisableStatusCodes')
   const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
+  const autoRetryErrorCodes = form.watch('AutomaticRetryErrorCodes')
   const autoDisableParsed = useMemo(
     () => parseHttpStatusCodeRules(autoDisableStatusCodes),
     [autoDisableStatusCodes]
@@ -218,6 +259,10 @@ export function MonitoringSettingsSection({
   const autoRetryParsed = useMemo(
     () => parseHttpStatusCodeRules(autoRetryStatusCodes),
     [autoRetryStatusCodes]
+  )
+  const autoRetryErrorParsed = useMemo(
+    () => parseErrorCodeRules(autoRetryErrorCodes),
+    [autoRetryErrorCodes]
   )
 
   const onSubmit = async (values: MonitoringFormValues) => {
@@ -484,6 +529,37 @@ export function MonitoringSettingsSection({
                       autoRetryParsed.normalized !== field.value.trim() && (
                         <span className='text-muted-foreground'>
                           {t('Normalized:')} {autoRetryParsed.normalized}
+                        </span>
+                      )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='AutomaticRetryErrorCodes'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('400 retry error codes')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t('e.g. rate_limit_cooldown')}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Retries HTTP 400 only when upstream error.code matches one of these values.'
+                    )}{' '}
+                    {autoRetryErrorParsed.ok &&
+                      autoRetryErrorParsed.normalized &&
+                      autoRetryErrorParsed.normalized !==
+                        field.value.trim() && (
+                        <span className='text-muted-foreground'>
+                          {t('Normalized:')} {autoRetryErrorParsed.normalized}
                         </span>
                       )}
                   </FormDescription>

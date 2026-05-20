@@ -28,6 +28,10 @@ var AutomaticRetryStatusCodeRanges = []StatusCodeRange{
 	{Start: 525, End: 599},
 }
 
+var AutomaticRetryErrorCodes = []types.ErrorCode{
+	types.ErrorCodeRateLimitCooldown,
+}
+
 var alwaysSkipRetryStatusCodes = map[int]struct{}{
 	504: {},
 	524: {},
@@ -67,6 +71,19 @@ func AutomaticRetryStatusCodesFromString(s string) error {
 	return nil
 }
 
+func AutomaticRetryErrorCodesToString() string {
+	return errorCodesToString(AutomaticRetryErrorCodes)
+}
+
+func AutomaticRetryErrorCodesFromString(s string) error {
+	codes, err := ParseErrorCodes(s)
+	if err != nil {
+		return err
+	}
+	AutomaticRetryErrorCodes = codes
+	return nil
+}
+
 func IsAlwaysSkipRetryStatusCode(code int) bool {
 	_, exists := alwaysSkipRetryStatusCodes[code]
 	return exists
@@ -84,6 +101,18 @@ func ShouldRetryByStatusCode(code int) bool {
 	return shouldMatchStatusCodeRanges(AutomaticRetryStatusCodeRanges, code)
 }
 
+func ShouldRetryByErrorCode(code types.ErrorCode) bool {
+	if code == "" {
+		return false
+	}
+	for _, retryCode := range AutomaticRetryErrorCodes {
+		if retryCode == code {
+			return true
+		}
+	}
+	return false
+}
+
 func statusCodeRangesToString(ranges []StatusCodeRange) string {
 	if len(ranges) == 0 {
 		return ""
@@ -95,6 +124,20 @@ func statusCodeRangesToString(ranges []StatusCodeRange) string {
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%d-%d", r.Start, r.End))
+	}
+	return strings.Join(parts, ",")
+}
+
+func errorCodesToString(codes []types.ErrorCode) string {
+	if len(codes) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(codes))
+	for _, code := range codes {
+		if code == "" {
+			continue
+		}
+		parts = append(parts, string(code))
 	}
 	return strings.Join(parts, ",")
 }
@@ -166,6 +209,54 @@ func ParseHTTPStatusCodeRanges(input string) ([]StatusCodeRange, error) {
 	}
 
 	return merged, nil
+}
+
+func ParseErrorCodes(input string) ([]types.ErrorCode, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, nil
+	}
+
+	input = strings.NewReplacer("\uff0c", ",").Replace(input)
+	segments := strings.Split(input, ",")
+
+	seen := make(map[types.ErrorCode]struct{})
+	var codes []types.ErrorCode
+	var invalid []string
+
+	for _, seg := range segments {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		if !isValidErrorCodeToken(seg) {
+			invalid = append(invalid, seg)
+			continue
+		}
+		code := types.ErrorCode(seg)
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		codes = append(codes, code)
+	}
+
+	if len(invalid) > 0 {
+		return nil, fmt.Errorf("invalid error code rules: %s", strings.Join(invalid, ", "))
+	}
+	if len(codes) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(codes, func(i, j int) bool {
+		return codes[i] < codes[j]
+	})
+
+	return codes, nil
+}
+
+func isValidErrorCodeToken(token string) bool {
+	return !strings.ContainsAny(token, " \t\r\n,")
 }
 
 func parseHTTPStatusCodeToken(token string) (StatusCodeRange, error) {

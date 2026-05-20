@@ -3,6 +3,7 @@ package operation_setting
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,6 +67,36 @@ func TestShouldRetryByStatusCode(t *testing.T) {
 	require.False(t, ShouldRetryByStatusCode(524))
 	require.False(t, ShouldRetryByStatusCode(400))
 	require.False(t, ShouldRetryByStatusCode(200))
+}
+
+func TestParseErrorCodes_NormalizesAndDeduplicates(t *testing.T) {
+	codes, err := ParseErrorCodes("rate_limit_cooldown, provider.cooldown, channel:no_available_key, rate_limit_cooldown")
+	require.NoError(t, err)
+	require.Equal(t, []types.ErrorCode{
+		"channel:no_available_key",
+		"provider.cooldown",
+		types.ErrorCodeRateLimitCooldown,
+	}, codes)
+}
+
+func TestParseErrorCodes_Invalid(t *testing.T) {
+	_, err := ParseErrorCodes("rate_limit_cooldown, bad code")
+	require.Error(t, err)
+}
+
+func TestShouldRetryByErrorCode(t *testing.T) {
+	orig := AutomaticRetryErrorCodes
+	t.Cleanup(func() { AutomaticRetryErrorCodes = orig })
+
+	AutomaticRetryErrorCodes = []types.ErrorCode{
+		types.ErrorCodeRateLimitCooldown,
+		"provider_cooldown",
+	}
+
+	require.True(t, ShouldRetryByErrorCode(types.ErrorCodeRateLimitCooldown))
+	require.True(t, ShouldRetryByErrorCode("provider_cooldown"))
+	require.False(t, ShouldRetryByErrorCode("invalid_request_error"))
+	require.False(t, ShouldRetryByErrorCode(""))
 }
 
 func TestShouldRetryByStatusCode_DefaultMatchesLegacyBehavior(t *testing.T) {

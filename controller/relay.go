@@ -340,6 +340,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
 	}
+	if isRetryableBadRequestErrorCode(openaiErr) {
+		return true
+	}
 	code := openaiErr.StatusCode
 	if code >= 200 && code < 300 {
 		return false
@@ -351,6 +354,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	return operation_setting.ShouldRetryByStatusCode(code)
+}
+
+func isRetryableBadRequestErrorCode(openaiErr *types.NewAPIError) bool {
+	return openaiErr != nil &&
+		openaiErr.StatusCode == http.StatusBadRequest &&
+		operation_setting.ShouldRetryByErrorCode(openaiErr.GetErrorCode())
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {

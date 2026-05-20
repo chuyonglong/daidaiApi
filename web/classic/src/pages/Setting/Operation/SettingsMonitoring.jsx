@@ -30,6 +30,24 @@ import {
 import { useTranslation } from 'react-i18next';
 import HttpStatusCodeRulesInput from '../../../components/settings/HttpStatusCodeRulesInput';
 
+function parseErrorCodeRules(value = '') {
+  const tokens = String(value)
+    .replace(/\uFF0C/g, ',')
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const invalidTokens = tokens.filter((token) => /\s|,/.test(token));
+  const normalized = Array.from(new Set(tokens))
+    .sort((a, b) => a.localeCompare(b))
+    .join(',');
+
+  return {
+    ok: invalidTokens.length === 0,
+    invalidTokens,
+    normalized,
+  };
+}
+
 export default function SettingsMonitoring(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -42,6 +60,7 @@ export default function SettingsMonitoring(props) {
     AutomaticDisableStatusCodes: '401',
     AutomaticRetryStatusCodes:
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
+    AutomaticRetryErrorCodes: 'rate_limit_cooldown',
     'monitor_setting.auto_test_channel_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10,
   });
@@ -52,6 +71,9 @@ export default function SettingsMonitoring(props) {
   );
   const parsedAutoRetryStatusCodes = parseHttpStatusCodeRules(
     inputs.AutomaticRetryStatusCodes || '',
+  );
+  const parsedAutoRetryErrorCodes = parseErrorCodeRules(
+    inputs.AutomaticRetryErrorCodes || '',
   );
 
   function onSubmit() {
@@ -73,6 +95,14 @@ export default function SettingsMonitoring(props) {
           : '';
       return showError(`${t('自动重试状态码格式不正确')}${details}`);
     }
+    if (!parsedAutoRetryErrorCodes.ok) {
+      const details =
+        parsedAutoRetryErrorCodes.invalidTokens &&
+        parsedAutoRetryErrorCodes.invalidTokens.length > 0
+          ? `: ${parsedAutoRetryErrorCodes.invalidTokens.join(', ')}`
+          : '';
+      return showError(`${t('自动重试错误码格式不正确')}${details}`);
+    }
     const requestQueue = updateArray.map((item) => {
       let value = '';
       if (typeof inputs[item.key] === 'boolean') {
@@ -81,6 +111,7 @@ export default function SettingsMonitoring(props) {
         const normalizedMap = {
           AutomaticDisableStatusCodes: parsedAutoDisableStatusCodes.normalized,
           AutomaticRetryStatusCodes: parsedAutoRetryStatusCodes.normalized,
+          AutomaticRetryErrorCodes: parsedAutoRetryErrorCodes.normalized,
         };
         value = normalizedMap[item.key] ?? inputs[item.key];
       }
@@ -262,6 +293,29 @@ export default function SettingsMonitoring(props) {
                   }
                   parsed={parsedAutoRetryStatusCodes}
                   invalidText={t('自动重试状态码格式不正确')}
+                />
+                <Form.Input
+                  label={t('400重试错误码')}
+                  placeholder={t('例如：rate_limit_cooldown')}
+                  extraText={t(
+                    'HTTP 400 返回时，仅当上游 error.code 命中这些值才重试',
+                  )}
+                  field={'AutomaticRetryErrorCodes'}
+                  onChange={(value) =>
+                    setInputs({ ...inputs, AutomaticRetryErrorCodes: value })
+                  }
+                  validateStatus={
+                    parsedAutoRetryErrorCodes.ok ? 'default' : 'error'
+                  }
+                  helpText={
+                    parsedAutoRetryErrorCodes.ok
+                      ? parsedAutoRetryErrorCodes.normalized &&
+                        parsedAutoRetryErrorCodes.normalized !==
+                          String(inputs.AutomaticRetryErrorCodes || '').trim()
+                        ? `${t('归一化')}: ${parsedAutoRetryErrorCodes.normalized}`
+                        : undefined
+                      : t('自动重试错误码格式不正确')
+                  }
                 />
                 <Form.TextArea
                   label={t('自动禁用关键词')}

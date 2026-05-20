@@ -1,6 +1,10 @@
 package service
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/types"
@@ -54,4 +58,20 @@ func TestResetStatusCode(t *testing.T) {
 			require.Equal(t, tc.expectedCode, newAPIError.StatusCode)
 		})
 	}
+}
+
+func TestRelayErrorHandlerParsesRateLimitCooldownCode(t *testing.T) {
+	cooldownMessage := "\u4e00\u5206\u949f30\u6b21 \uff0c\u51b7\u537420\u79d2"
+	responseBody := `{"error":{"message":"\u4e00\u5206\u949f30\u6b21 \uff0c\u51b7\u537420\u79d2","type":"invalid_request_error","code":"rate_limit_cooldown"},"message":"\u4e00\u5206\u949f30\u6b21 \uff0c\u51b7\u537420\u79d2","code":"rate_limit_cooldown","limit_type":"cooldown"}`
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(responseBody)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, true)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, http.StatusBadRequest, newAPIError.StatusCode)
+	require.Equal(t, types.ErrorCodeRateLimitCooldown, newAPIError.GetErrorCode())
+	require.Equal(t, cooldownMessage, newAPIError.ToOpenAIError().Message)
 }
