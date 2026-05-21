@@ -14,6 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/QuantumNous/new-api/types"
 
@@ -222,6 +223,15 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	err = common.Unmarshal(responseBody, &simpleResponse)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+
+	if operation_setting.HasAutomaticRetryErrorKeywords() {
+		responseText := string(responseBody)
+		if operation_setting.ShouldRetryByErrorKeyword(responseText) {
+			newAPIError := types.NewOpenAIError(fmt.Errorf("upstream response matched retry keyword"), types.ErrorCodeBadResponse, http.StatusBadRequest)
+			newAPIError.SetResponseBody(responseText)
+			return nil, newAPIError
+		}
 	}
 
 	if oaiError := simpleResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {

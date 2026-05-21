@@ -18,6 +18,14 @@ func setAutomaticRetryErrorCodesForTest(t *testing.T, codes []types.ErrorCode) {
 	operation_setting.AutomaticRetryErrorCodes = codes
 }
 
+func setAutomaticRetryErrorKeywordsForTest(t *testing.T, keywords []string) {
+	t.Helper()
+
+	orig := operation_setting.AutomaticRetryErrorKeywords
+	t.Cleanup(func() { operation_setting.AutomaticRetryErrorKeywords = orig })
+	operation_setting.AutomaticRetryErrorKeywords = keywords
+}
+
 func TestShouldRetryRateLimitCooldownBadRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	setAutomaticRetryErrorCodesForTest(t, []types.ErrorCode{types.ErrorCodeRateLimitCooldown})
@@ -58,6 +66,29 @@ func TestShouldRetryBadRequestStillSkipsOtherInvalidRequests(t *testing.T) {
 	}, http.StatusBadRequest)
 
 	require.False(t, shouldRetry(c, err, 1))
+}
+
+func TestShouldRetryBadRequestByConfiguredResponseKeyword(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setAutomaticRetryErrorCodesForTest(t, nil)
+	setAutomaticRetryErrorKeywordsForTest(t, []string{"切换key需要冷却30秒"})
+
+	c, _ := gin.CreateTestContext(nil)
+	err := types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+	err.SetResponseBody("切换key需要冷却30秒")
+
+	require.True(t, shouldRetry(c, err, 1))
+}
+
+func TestShouldRetryBadRequestByConfiguredResponseKeywordRequiresRetryBudget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setAutomaticRetryErrorKeywordsForTest(t, []string{"公益暂停一会，通知群1104138863"})
+
+	c, _ := gin.CreateTestContext(nil)
+	err := types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, http.StatusBadRequest)
+	err.SetResponseBody("公益暂停一会，通知群1104138863")
+
+	require.False(t, shouldRetry(c, err, 0))
 }
 
 func TestShouldRetryRateLimitCooldownRequiresRetryBudget(t *testing.T) {

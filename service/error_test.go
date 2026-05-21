@@ -75,3 +75,19 @@ func TestRelayErrorHandlerParsesRateLimitCooldownCode(t *testing.T) {
 	require.Equal(t, types.ErrorCodeRateLimitCooldown, newAPIError.GetErrorCode())
 	require.Equal(t, cooldownMessage, newAPIError.ToOpenAIError().Message)
 }
+
+func TestRelayErrorHandlerKeepsRawBodyForHiddenPlainTextErrors(t *testing.T) {
+	responseBody := "切换key需要冷却30秒"
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(responseBody)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, http.StatusBadRequest, newAPIError.StatusCode)
+	require.Equal(t, types.ErrorCodeBadResponseStatusCode, newAPIError.GetErrorCode())
+	require.Equal(t, responseBody, newAPIError.GetResponseBody())
+	require.NotContains(t, newAPIError.Error(), responseBody)
+}

@@ -340,7 +340,10 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
 	}
-	if isRetryableBadRequestErrorCode(openaiErr) {
+	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
+		return false
+	}
+	if isRetryableBadRequestError(openaiErr) {
 		return true
 	}
 	code := openaiErr.StatusCode
@@ -350,16 +353,23 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if code < 100 || code > 599 {
 		return true
 	}
-	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
-		return false
-	}
 	return operation_setting.ShouldRetryByStatusCode(code)
 }
 
-func isRetryableBadRequestErrorCode(openaiErr *types.NewAPIError) bool {
-	return openaiErr != nil &&
-		openaiErr.StatusCode == http.StatusBadRequest &&
-		operation_setting.ShouldRetryByErrorCode(openaiErr.GetErrorCode())
+func isRetryableBadRequestError(openaiErr *types.NewAPIError) bool {
+	if openaiErr == nil || openaiErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	if operation_setting.ShouldRetryByErrorCode(openaiErr.GetErrorCode()) {
+		return true
+	}
+	if !operation_setting.HasAutomaticRetryErrorKeywords() {
+		return false
+	}
+	return operation_setting.ShouldRetryByErrorKeyword(strings.Join([]string{
+		openaiErr.Error(),
+		openaiErr.GetResponseBody(),
+	}, "\n"))
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {

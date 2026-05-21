@@ -64,6 +64,20 @@ function parseErrorCodeRules(value: string) {
   }
 }
 
+function parseRetryKeywordRules(value: string) {
+  const tokens = value
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split(/[\n,]/)
+    .map((token) => token.trim().toLocaleLowerCase())
+    .filter(Boolean)
+  const normalized = Array.from(new Set(tokens)).join('\n')
+
+  return {
+    normalized,
+  }
+}
+
 const monitoringSchema = z
   .object({
     ChannelDisableThreshold: numericString,
@@ -74,6 +88,7 @@ const monitoringSchema = z
     AutomaticDisableStatusCodes: z.string(),
     AutomaticRetryStatusCodes: z.string(),
     AutomaticRetryErrorCodes: z.string(),
+    AutomaticRetryErrorKeywords: z.string(),
     monitor_setting: z.object({
       auto_test_channel_enabled: z.boolean(),
       auto_test_channel_minutes: z.coerce
@@ -136,6 +151,7 @@ type MonitoringSettingsSectionProps = {
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
     AutomaticRetryErrorCodes: string
+    AutomaticRetryErrorKeywords: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
   }
@@ -154,6 +170,7 @@ type NormalizedMonitoringValues = {
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   AutomaticRetryErrorCodes: string
+  AutomaticRetryErrorKeywords: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
 }
@@ -171,6 +188,9 @@ const buildFormDefaults = (
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
   AutomaticRetryErrorCodes: defaults.AutomaticRetryErrorCodes ?? '',
+  AutomaticRetryErrorKeywords: normalizeLineEndings(
+    defaults.AutomaticRetryErrorKeywords ?? ''
+  ),
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
@@ -198,6 +218,9 @@ const normalizeDefaults = (
   AutomaticRetryErrorCodes: parseErrorCodeRules(
     defaults.AutomaticRetryErrorCodes ?? ''
   ).normalized,
+  AutomaticRetryErrorKeywords: parseRetryKeywordRules(
+    defaults.AutomaticRetryErrorKeywords ?? ''
+  ).normalized,
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
@@ -222,6 +245,9 @@ const normalizeFormValues = (
   ).normalized,
   AutomaticRetryErrorCodes: parseErrorCodeRules(values.AutomaticRetryErrorCodes)
     .normalized,
+  AutomaticRetryErrorKeywords: parseRetryKeywordRules(
+    values.AutomaticRetryErrorKeywords
+  ).normalized,
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
@@ -252,6 +278,7 @@ export function MonitoringSettingsSection({
   const autoDisableStatusCodes = form.watch('AutomaticDisableStatusCodes')
   const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
   const autoRetryErrorCodes = form.watch('AutomaticRetryErrorCodes')
+  const autoRetryErrorKeywords = form.watch('AutomaticRetryErrorKeywords')
   const autoDisableParsed = useMemo(
     () => parseHttpStatusCodeRules(autoDisableStatusCodes),
     [autoDisableStatusCodes]
@@ -263,6 +290,10 @@ export function MonitoringSettingsSection({
   const autoRetryErrorParsed = useMemo(
     () => parseErrorCodeRules(autoRetryErrorCodes),
     [autoRetryErrorCodes]
+  )
+  const autoRetryKeywordParsed = useMemo(
+    () => parseRetryKeywordRules(autoRetryErrorKeywords),
+    [autoRetryErrorKeywords]
   )
 
   const onSubmit = async (values: MonitoringFormValues) => {
@@ -560,6 +591,37 @@ export function MonitoringSettingsSection({
                         field.value.trim() && (
                         <span className='text-muted-foreground'>
                           {t('Normalized:')} {autoRetryErrorParsed.normalized}
+                        </span>
+                      )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='AutomaticRetryErrorKeywords'
+              render={({ field }) => (
+                <FormItem className='md:col-span-2'>
+                  <FormLabel>{t('Retry response keywords')}</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={3}
+                      placeholder={t('one keyword per line or comma-separated')}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Retries HTTP 400 errors and non-stream successful responses when upstream body or error message contains any of these keywords.'
+                    )}{' '}
+                    {autoRetryKeywordParsed.normalized &&
+                      autoRetryKeywordParsed.normalized !==
+                        normalizeLineEndings(field.value).trim() && (
+                        <span className='text-muted-foreground'>
+                          {t('Normalized:')} {autoRetryKeywordParsed.normalized}
                         </span>
                       )}
                   </FormDescription>

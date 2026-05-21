@@ -99,6 +99,34 @@ func TestShouldRetryByErrorCode(t *testing.T) {
 	require.False(t, ShouldRetryByErrorCode(""))
 }
 
+func TestAutomaticRetryErrorKeywordsFromString(t *testing.T) {
+	orig := AutomaticRetryErrorKeywords
+	t.Cleanup(func() { AutomaticRetryErrorKeywords = orig })
+
+	AutomaticRetryErrorKeywordsFromString("公益暂停一会，通知群1104138863\n切换key需要冷却30秒, KEY cooldown ")
+
+	require.Equal(t, []string{
+		"公益暂停一会，通知群1104138863",
+		"切换key需要冷却30秒",
+		"key cooldown",
+	}, AutomaticRetryErrorKeywords)
+}
+
+func TestShouldRetryByErrorKeyword(t *testing.T) {
+	orig := AutomaticRetryErrorKeywords
+	t.Cleanup(func() { AutomaticRetryErrorKeywords = orig })
+
+	AutomaticRetryErrorKeywords = []string{
+		"公益暂停一会，通知群1104138863",
+		"切换key需要冷却30秒",
+	}
+
+	require.True(t, ShouldRetryByErrorKeyword("bad response status code 400, body: 公益暂停一会，通知群1104138863"))
+	require.True(t, ShouldRetryByErrorKeyword("切换KEY需要冷却30秒"))
+	require.False(t, ShouldRetryByErrorKeyword("invalid request"))
+	require.False(t, ShouldRetryByErrorKeyword(""))
+}
+
 func TestShouldRetryByStatusCode_DefaultMatchesLegacyBehavior(t *testing.T) {
 	require.False(t, ShouldRetryByStatusCode(200))
 	require.False(t, ShouldRetryByStatusCode(400))

@@ -48,6 +48,20 @@ function parseErrorCodeRules(value = '') {
   };
 }
 
+function parseRetryKeywordRules(value = '') {
+  const tokens = String(value)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split(/[\n,]/)
+    .map((token) => token.trim().toLocaleLowerCase())
+    .filter(Boolean);
+  const normalized = Array.from(new Set(tokens)).join('\n');
+
+  return {
+    normalized,
+  };
+}
+
 export default function SettingsMonitoring(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -61,6 +75,7 @@ export default function SettingsMonitoring(props) {
     AutomaticRetryStatusCodes:
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
     AutomaticRetryErrorCodes: 'rate_limit_cooldown',
+    AutomaticRetryErrorKeywords: '',
     'monitor_setting.auto_test_channel_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10,
   });
@@ -74,6 +89,9 @@ export default function SettingsMonitoring(props) {
   );
   const parsedAutoRetryErrorCodes = parseErrorCodeRules(
     inputs.AutomaticRetryErrorCodes || '',
+  );
+  const parsedAutoRetryErrorKeywords = parseRetryKeywordRules(
+    inputs.AutomaticRetryErrorKeywords || '',
   );
 
   function onSubmit() {
@@ -112,6 +130,7 @@ export default function SettingsMonitoring(props) {
           AutomaticDisableStatusCodes: parsedAutoDisableStatusCodes.normalized,
           AutomaticRetryStatusCodes: parsedAutoRetryStatusCodes.normalized,
           AutomaticRetryErrorCodes: parsedAutoRetryErrorCodes.normalized,
+          AutomaticRetryErrorKeywords: parsedAutoRetryErrorKeywords.normalized,
         };
         value = normalizedMap[item.key] ?? inputs[item.key];
       }
@@ -315,6 +334,25 @@ export default function SettingsMonitoring(props) {
                         ? `${t('归一化')}: ${parsedAutoRetryErrorCodes.normalized}`
                         : undefined
                       : t('自动重试错误码格式不正确')
+                  }
+                />
+                <Form.TextArea
+                  label={t('响应重试关键词')}
+                  placeholder={t('每行一个关键词，也支持英文逗号分隔')}
+                  extraText={t(
+                    'HTTP 400 错误或非流式成功响应中，上游响应内容或错误消息包含这些关键词时重试',
+                  )}
+                  field={'AutomaticRetryErrorKeywords'}
+                  onChange={(value) =>
+                    setInputs({ ...inputs, AutomaticRetryErrorKeywords: value })
+                  }
+                  autosize
+                  helpText={
+                    parsedAutoRetryErrorKeywords.normalized &&
+                    parsedAutoRetryErrorKeywords.normalized !==
+                      String(inputs.AutomaticRetryErrorKeywords || '').trim()
+                      ? `${t('归一化')}: ${parsedAutoRetryErrorKeywords.normalized}`
+                      : undefined
                   }
                 />
                 <Form.TextArea

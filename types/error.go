@@ -97,6 +97,7 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+	responseBody   string
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -119,6 +120,20 @@ func (e *NewAPIError) GetErrorType() ErrorType {
 		return ""
 	}
 	return e.errorType
+}
+
+func (e *NewAPIError) SetResponseBody(responseBody string) {
+	if e == nil {
+		return
+	}
+	e.responseBody = responseBody
+}
+
+func (e *NewAPIError) GetResponseBody() string {
+	if e == nil {
+		return ""
+	}
+	return e.responseBody
 }
 
 func (e *NewAPIError) Error() string {
