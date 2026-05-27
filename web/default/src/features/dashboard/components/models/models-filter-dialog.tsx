@@ -20,7 +20,12 @@ import { useState } from 'react'
 import { Filter, RotateCcw, Calendar, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
-import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
+import {
+  getEndOfDay,
+  getRollingDateRange,
+  getStartOfDay,
+  type TimeGranularity,
+} from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -77,6 +82,8 @@ const SectionDivider = ({ label }: { label: string }) => (
   </div>
 )
 
+type QuickRangeKey = number | 'today' | 'thisMonth'
+
 export function ModelsFilter(props: ModelsFilterProps) {
   const { t } = useTranslation()
   // 使用已缓存的用户数据，避免重复调用 API
@@ -87,7 +94,7 @@ export function ModelsFilter(props: ModelsFilterProps) {
   const [filters, setFilters] = useState<DashboardFilters>(() =>
     buildDefaultDashboardFilters(props.preferences)
   )
-  const [selectedRange, setSelectedRange] = useState<number | null>(
+  const [selectedRange, setSelectedRange] = useState<QuickRangeKey | null>(
     () => props.preferences.defaultTimeRangeDays
   )
 
@@ -143,6 +150,29 @@ export function ModelsFilter(props: ModelsFilterProps) {
     setSelectedRange(days)
   }
 
+  const handleTodayRange = () => {
+    const now = new Date()
+
+    setFilters((prev) => ({
+      ...prev,
+      start_timestamp: getStartOfDay(now),
+      end_timestamp: getEndOfDay(now),
+    }))
+    setSelectedRange('today')
+  }
+
+  const handleThisMonthRange = () => {
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    setFilters((prev) => ({
+      ...prev,
+      start_timestamp: getStartOfDay(start),
+      end_timestamp: now,
+    }))
+    setSelectedRange('thisMonth')
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger render={<Button variant='outline' size='sm' />}>
@@ -167,7 +197,34 @@ export function ModelsFilter(props: ModelsFilterProps) {
                 <Calendar className='h-4 w-4' />
                 {t('Quick Range')}
               </Label>
-              <div className='grid grid-cols-2 gap-2 sm:flex'>
+              <div className='grid grid-cols-2 gap-2 sm:grid-cols-3'>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant={selectedRange === 'today' ? 'default' : 'outline'}
+                  onClick={handleTodayRange}
+                  className={cn(
+                    'flex-1',
+                    selectedRange === 'today' && 'ring-ring ring-2 ring-offset-2'
+                  )}
+                >
+                  {t('Today')}
+                </Button>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant={
+                    selectedRange === 'thisMonth' ? 'default' : 'outline'
+                  }
+                  onClick={handleThisMonthRange}
+                  className={cn(
+                    'flex-1',
+                    selectedRange === 'thisMonth' &&
+                      'ring-ring ring-2 ring-offset-2'
+                  )}
+                >
+                  {t('This Month')}
+                </Button>
                 {TIME_RANGE_PRESETS.map((range) => (
                   <Button
                     key={range.days}
