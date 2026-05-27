@@ -245,3 +245,53 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	_, exists = info.RuntimeHeadersOverride["x-codex-turn-metadata"]
 	require.False(t, exists)
 }
+
+func TestClearChannelAffinityCacheByChannelIDDeletesOnlyMatchingChannel(t *testing.T) {
+	cache := getChannelAffinityCache()
+	keys := []string{
+		"test-rule-a:gpt-5:default:affinity-a",
+		"test-rule-a:gpt-5:default:affinity-b",
+		"test-rule-b:gpt-5:default:affinity-c",
+	}
+	t.Cleanup(func() {
+		_, _ = cache.DeleteMany(keys)
+	})
+
+	require.NoError(t, cache.SetWithTTL(keys[0], 1001, time.Minute))
+	require.NoError(t, cache.SetWithTTL(keys[1], 2002, time.Minute))
+	require.NoError(t, cache.SetWithTTL(keys[2], 1001, time.Minute))
+
+	deleted := ClearChannelAffinityCacheByChannelID(1001)
+	require.Equal(t, 2, deleted)
+
+	_, found, err := cache.Get(keys[0])
+	require.NoError(t, err)
+	require.False(t, found)
+
+	value, found, err := cache.Get(keys[1])
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 2002, value)
+
+	_, found, err = cache.Get(keys[2])
+	require.NoError(t, err)
+	require.False(t, found)
+}
+
+func TestClearChannelAffinityCacheByChannelIDIgnoresInvalidChannelID(t *testing.T) {
+	cache := getChannelAffinityCache()
+	key := "test-rule-invalid:gpt-5:default:affinity"
+	t.Cleanup(func() {
+		_, _ = cache.DeleteMany([]string{key})
+	})
+
+	require.NoError(t, cache.SetWithTTL(key, 3003, time.Minute))
+
+	deleted := ClearChannelAffinityCacheByChannelID(0)
+	require.Equal(t, 0, deleted)
+
+	value, found, err := cache.Get(key)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 3003, value)
+}

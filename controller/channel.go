@@ -873,10 +873,21 @@ func DisableTagChannels(c *gin.Context) {
 		})
 		return
 	}
+	channels, err := model.GetChannelsByTag(channelTag.Tag, false, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	err = model.DisableChannelByTag(channelTag.Tag)
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	for _, channel := range channels {
+		if channel == nil || channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		service.ClearChannelAffinityCacheByChannelID(channel.Id)
 	}
 	model.InitChannelCache()
 	c.JSON(http.StatusOK, gin.H{
@@ -1114,6 +1125,9 @@ func UpdateChannel(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if originChannel.Status == common.ChannelStatusEnabled && channel.Status != common.ChannelStatusEnabled {
+		service.ClearChannelAffinityCacheByChannelID(channel.Id)
 	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()

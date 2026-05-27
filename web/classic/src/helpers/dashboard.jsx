@@ -24,6 +24,7 @@ import {
   IllustrationConstructionDark,
 } from '@douyinfe/semi-illustrations';
 import {
+  getTodayStartTimestamp,
   timestamp2string,
   timestamp2string1,
   isDataCrossYear,
@@ -40,6 +41,18 @@ import {
 // ========== 时间相关工具函数 ==========
 export const getDefaultTime = () => {
   return localStorage.getItem(STORAGE_KEYS.DATA_EXPORT_DEFAULT_TIME) || 'hour';
+};
+
+export const getDashboardDefaultTimeRange = () => {
+  const start_timestamp = timestamp2string(getTodayStartTimestamp());
+  const end_timestamp = timestamp2string(
+    Math.floor(new Date().getTime() / 1000 + 3600),
+  );
+
+  return {
+    start_timestamp,
+    end_timestamp,
+  };
 };
 
 export const getTimeInterval = (timeType, isSeconds = false) => {

@@ -210,6 +210,47 @@ func ClearChannelAffinityCacheAll() int {
 	return len(keys)
 }
 
+func ClearChannelAffinityCacheByChannelID(channelID int) int {
+	if channelID <= 0 {
+		return 0
+	}
+
+	cache := getChannelAffinityCache()
+	keys, err := cache.Keys()
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity cache list keys failed: channel_id=%d, err=%v", channelID, err))
+		return 0
+	}
+
+	keysToDelete := make([]string, 0)
+	for _, key := range keys {
+		cachedChannelID, found, err := cache.Get(key)
+		if err != nil {
+			common.SysError(fmt.Sprintf("channel affinity cache get failed: key=%s, err=%v", key, err))
+			continue
+		}
+		if found && cachedChannelID == channelID {
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+	if len(keysToDelete) == 0 {
+		return 0
+	}
+
+	deletedMap, err := cache.DeleteMany(keysToDelete)
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity cache delete many failed: channel_id=%d, err=%v", channelID, err))
+		return 0
+	}
+	deleted := 0
+	for _, ok := range deletedMap {
+		if ok {
+			deleted++
+		}
+	}
+	return deleted
+}
+
 func ClearChannelAffinityCacheByRuleName(ruleName string) (int, error) {
 	ruleName = strings.TrimSpace(ruleName)
 	if ruleName == "" {

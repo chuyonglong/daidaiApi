@@ -104,6 +104,7 @@ func Distribute() func(c *gin.Context) {
 					if err == nil && preferred != nil {
 						if preferred.Status != common.ChannelStatusEnabled {
 							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+								service.ClearChannelAffinityCacheByChannelID(preferred.Id)
 								abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorAffinityChannelDisabled))
 								return
 							}
