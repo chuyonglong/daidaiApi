@@ -24,7 +24,7 @@ import {
   useCallback,
   useRef,
 } from 'react'
-import { useForm } from 'react-hook-form'
+import { type ControllerRenderProps, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -111,6 +111,7 @@ import {
   getAllModels,
   getChannel,
   getChannelKey,
+  getChannels,
   getGroups,
   getPrefillGroups,
   refreshCodexCredential,
@@ -143,6 +144,7 @@ import {
   extractMappingSourceModels,
   hasModelConfigChanged,
   findMissingModelsInMapping,
+  getDefaultBaseUrl,
   validateModelMappingJson,
 } from '../../lib'
 import {
@@ -172,6 +174,12 @@ type ModelMappingGuardrail = {
   entries: Array<{ source: string; target: string }>
   missingSourceModels: string[]
   exposedTargetModels: string[]
+}
+
+type BaseUrlField = ControllerRenderProps<ChannelFormValues, 'base_url'>
+type BaseUrlOption = {
+  value: string
+  label: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -217,6 +225,41 @@ const MODEL_MAPPING_PREVIEW_FALLBACK: Array<{
 
 const ADVANCED_SETTINGS_EXPANDED_KEY = 'channel-advanced-settings-expanded'
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
+const BASE_URL_OPTIONS_PAGE_SIZE = 1000
+
+async function getChannelsForBaseUrlOptions() {
+  const firstPage = await getChannels({
+    p: 1,
+    page_size: BASE_URL_OPTIONS_PAGE_SIZE,
+  })
+  const firstItems = firstPage.data?.items ?? []
+  const total = firstPage.data?.total ?? firstItems.length
+  const pageCount = Math.ceil(total / BASE_URL_OPTIONS_PAGE_SIZE)
+
+  if (!firstPage.data || pageCount <= 1) {
+    return firstPage
+  }
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: pageCount - 1 }, (_, index) =>
+      getChannels({
+        p: index + 2,
+        page_size: BASE_URL_OPTIONS_PAGE_SIZE,
+      })
+    )
+  )
+
+  return {
+    ...firstPage,
+    data: {
+      ...firstPage.data,
+      items: [
+        ...firstItems,
+        ...remainingPages.flatMap((page) => page.data?.items ?? []),
+      ],
+    },
+  }
+}
 
 function readAdvancedSettingsPreference(): boolean {
   if (typeof window === 'undefined') return false
@@ -291,6 +334,130 @@ function SubHeading({ title, icon }: { title: string; icon?: ReactNode }) {
   )
 }
 
+function BaseUrlSuggestionsInput({
+  field,
+  options,
+  placeholder,
+}: {
+  field: BaseUrlField
+  options: BaseUrlOption[]
+  placeholder: string
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [showAllOptions, setShowAllOptions] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const currentValue = field.value || ''
+  const filteredOptions = useMemo(() => {
+    if (showAllOptions || !currentValue.trim()) return options
+
+    const search = currentValue.toLowerCase().trim()
+    return options.filter(
+      (option) =>
+        option.label.toLowerCase().includes(search) ||
+        option.value.toLowerCase().includes(search)
+    )
+  }, [currentValue, options, showAllOptions])
+
+  useEffect(() => {
+    if (!open) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setShowAllOptions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [open])
+
+  const handleSelect = (value: string) => {
+    field.onChange(value)
+    setOpen(false)
+    setShowAllOptions(false)
+  }
+
+  return (
+    <div ref={containerRef} className='relative'>
+      <Input
+        {...field}
+        value={currentValue}
+        placeholder={placeholder}
+        role='combobox'
+        aria-expanded={open}
+        aria-haspopup='listbox'
+        autoComplete='off'
+        className='pr-9'
+        onFocus={() => {
+          setOpen(true)
+          setShowAllOptions(false)
+        }}
+        onChange={(event) => {
+          field.onChange(event.target.value)
+          setOpen(true)
+          setShowAllOptions(false)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setOpen(true)
+            setShowAllOptions(true)
+          }
+          if (event.key === 'Escape') {
+            setOpen(false)
+            setShowAllOptions(false)
+          }
+        }}
+      />
+      <button
+        type='button'
+        aria-label={t('API URL')}
+        className='text-muted-foreground hover:text-foreground absolute top-1/2 right-2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm transition-colors'
+        onMouseDown={(event) => {
+          event.preventDefault()
+          setOpen((value) => !value)
+          setShowAllOptions(true)
+        }}
+      >
+        <ChevronDown className='size-4' />
+      </button>
+
+      {open && (
+        <div className='bg-popover text-popover-foreground absolute top-full z-50 mt-1 w-full rounded-md border shadow-md'>
+          {filteredOptions.length > 0 ? (
+            <ul role='listbox' className='max-h-[220px] overflow-y-auto p-1'>
+              {filteredOptions.map((option) => (
+                <li
+                  key={option.value}
+                  role='option'
+                  aria-selected={currentValue === option.value}
+                  className={cn(
+                    'hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center rounded-sm px-2 py-1.5 text-sm',
+                    currentValue === option.value && 'font-medium'
+                  )}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    handleSelect(option.value)
+                  }}
+                >
+                  <span className='truncate'>{option.label}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className='text-muted-foreground px-2 py-4 text-center text-sm'>
+              {t('No option found.')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ChannelMutateDrawer({
   open,
   onOpenChange,
@@ -346,6 +513,18 @@ export function ChannelMutateDrawer({
   const { data: allModelsData } = useQuery({
     queryKey: ['channel_models'],
     queryFn: getAllModels,
+  })
+
+  // Fetch existing channels for create-time API address suggestions.
+  const { data: existingChannelsData } = useQuery({
+    queryKey: channelsQueryKeys.list({
+      purpose: 'base-url-options',
+      p: 1,
+      page_size: BASE_URL_OPTIONS_PAGE_SIZE,
+    }),
+    queryFn: getChannelsForBaseUrlOptions,
+    enabled: open && !isEditing,
+    staleTime: 30 * 1000,
   })
 
   // Fetch prefill model groups
@@ -467,6 +646,40 @@ export function ChannelMutateDrawer({
       CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
         ?.label || `#${currentType}`,
     [currentType]
+  )
+
+  const baseUrlOptions = useMemo(() => {
+    const baseUrls = existingChannelsData?.data?.items ?? []
+
+    return Array.from(
+      new Set(
+        baseUrls
+          .map((channel) =>
+            typeof channel.base_url === 'string' ? channel.base_url.trim() : ''
+          )
+          .filter(Boolean)
+      )
+    ).map((baseUrl) => ({
+      value: baseUrl,
+      label: baseUrl,
+    }))
+  }, [existingChannelsData])
+
+  const renderBaseUrlControl = useCallback(
+    (field: BaseUrlField, placeholder: string) => {
+      if (isEditing) {
+        return <Input placeholder={placeholder} {...field} />
+      }
+
+      return (
+        <BaseUrlSuggestionsInput
+          field={field}
+          options={baseUrlOptions}
+          placeholder={placeholder}
+        />
+      )
+    },
+    [baseUrlOptions, isEditing]
   )
 
   const channelTypeOptions = useMemo(() => {
@@ -632,6 +845,13 @@ export function ChannelMutateDrawer({
       const currentBaseUrlValue = form.getValues('base_url')
       if (!currentBaseUrlValue || currentBaseUrlValue === '') {
         form.setValue('base_url', 'https://ark.cn-beijing.volces.com')
+      }
+    }
+
+    if (currentType === 58) {
+      const currentBaseUrlValue = form.getValues('base_url')
+      if (!currentBaseUrlValue || currentBaseUrlValue === '') {
+        form.setValue('base_url', getDefaultBaseUrl(currentType))
       }
     }
 
@@ -1250,12 +1470,10 @@ export function ChannelMutateDrawer({
                         <FormItem>
                           <FormLabel>{t('AZURE_OPENAI_ENDPOINT *')}</FormLabel>
                           <FormControl>
-                            <Input
-                              placeholder={t(
-                                'e.g., https://docs-test-001.openai.azure.com'
-                              )}
-                              {...field}
-                            />
+                            {renderBaseUrlControl(
+                              field,
+                              t('e.g., https://docs-test-001.openai.azure.com')
+                            )}
                           </FormControl>
                           <FormDescription>
                             {t('Your Azure OpenAI endpoint URL')}
@@ -1320,12 +1538,12 @@ export function ChannelMutateDrawer({
                           {'}'} {t('variable) *')}
                         </FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder={t(
+                          {renderBaseUrlControl(
+                            field,
+                            t(
                               'e.g., https://api.openai.com/v1/chat/completions'
-                            )}
-                            {...field}
-                          />
+                            )
+                          )}
                         </FormControl>
                         <FormDescription>
                           {t('Enter the complete URL, supports')} {'{'}
@@ -1465,12 +1683,10 @@ export function ChannelMutateDrawer({
                       <FormItem>
                         <FormLabel>{t('Private Deployment URL')}</FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder={t(
-                              'e.g., https://fastgpt.run/api/openapi'
-                            )}
-                            {...field}
-                          />
+                          {renderBaseUrlControl(
+                            field,
+                            t('e.g., https://fastgpt.run/api/openapi')
+                          )}
                         </FormControl>
                         <FormDescription>
                           {t(
@@ -1494,12 +1710,12 @@ export function ChannelMutateDrawer({
                           {t('API Base URL (Important: Not Chat API) *')}
                         </FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder={t(
+                          {renderBaseUrlControl(
+                            field,
+                            t(
                               'e.g., https://api.example.com (path before /suno)'
-                            )}
-                            {...field}
-                          />
+                            )
+                          )}
                         </FormControl>
                         <FormDescription>
                           {t(
@@ -1766,12 +1982,10 @@ export function ChannelMutateDrawer({
                       <FormItem>
                         <FormLabel>{t('API Base URL *')}</FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder={t(
-                              'e.g., https://ark.cn-beijing.volces.com'
-                            )}
-                            {...field}
-                          />
+                          {renderBaseUrlControl(
+                            field,
+                            t('e.g., https://ark.cn-beijing.volces.com')
+                          )}
                         </FormControl>
                         <FormDescription>
                           {t('Enter custom API endpoint URL')}
@@ -1814,10 +2028,10 @@ export function ChannelMutateDrawer({
                       <FormItem>
                         <FormLabel>{t('Base URL')}</FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder={t(FIELD_PLACEHOLDERS.BASE_URL)}
-                            {...field}
-                          />
+                          {renderBaseUrlControl(
+                            field,
+                            t(FIELD_PLACEHOLDERS.BASE_URL)
+                          )}
                         </FormControl>
                         <FormDescription>
                           {t(

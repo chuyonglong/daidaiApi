@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { BatchAddModelsDialog } from './dialogs/batch-add-models-dialog'
 import { DescriptionDialog } from './dialogs/description-dialog'
 import { MissingModelsDialog } from './dialogs/missing-models-dialog'
 import { PrefillGroupManagement } from './dialogs/prefill-group-management'
@@ -54,6 +55,12 @@ export function ModelsDialogs() {
       {/* Missing Models Dialog */}
       <MissingModelsDialog
         open={open === 'missing-models'}
+        onOpenChange={(v) => !v && setOpen(null)}
+      />
+
+      {/* Batch Add Models Dialog */}
+      <BatchAddModelsDialog
+        open={open === 'batch-add-models'}
         onOpenChange={(v) => !v && setOpen(null)}
       />
 

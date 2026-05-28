@@ -21,6 +21,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   List,
+  ListPlus,
   Building2,
   AlertCircle,
 } from 'lucide-react'
@@ -38,7 +39,7 @@ import { useModels } from './models-provider'
 
 export function ModelsPrimaryButtons() {
   const { t } = useTranslation()
-  const { setOpen, setCurrentRow } = useModels()
+  const { setOpen, setCurrentRow, selectedVendor } = useModels()
 
   const handleCreateModel = () => {
     setCurrentRow(null)
@@ -47,6 +48,11 @@ export function ModelsPrimaryButtons() {
 
   const handleMissingModels = () => {
     setOpen('missing-models')
+  }
+
+  const handleBatchAddModels = () => {
+    if (!selectedVendor) return
+    setOpen('batch-add-models')
   }
 
   const handleSync = () => {
@@ -67,6 +73,21 @@ export function ModelsPrimaryButtons() {
       <Button onClick={handleCreateModel} size='sm'>
         <Plus className='h-4 w-4' />
         {t('Add Model')}
+      </Button>
+
+      <Button
+        onClick={handleBatchAddModels}
+        size='sm'
+        variant='outline'
+        disabled={!selectedVendor}
+        title={
+          selectedVendor
+            ? t('Batch add models to the selected vendor')
+            : t('Select a vendor first')
+        }
+      >
+        <ListPlus className='h-4 w-4' />
+        {t('Batch Add Models')}
       </Button>
 
       {/* More Actions */}

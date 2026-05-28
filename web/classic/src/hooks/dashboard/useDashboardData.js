@@ -161,18 +161,25 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
   const loadQuotaData = useCallback(async () => {
     setLoading(true);
     try {
-      let url = '';
       const { start_timestamp, end_timestamp, username } = inputs;
       let localStartTimestamp = Date.parse(start_timestamp) / 1000;
       let localEndTimestamp = Date.parse(end_timestamp) / 1000;
+      const params = {
+        start_timestamp: localStartTimestamp,
+        end_timestamp: localEndTimestamp,
+        default_time: dataExportDefaultTime,
+      };
 
+      let endpoint = '/api/data/self/';
       if (isAdminUser) {
-        url = `/api/data/?username=${username}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&default_time=${dataExportDefaultTime}`;
-      } else {
-        url = `/api/data/self/?start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&default_time=${dataExportDefaultTime}`;
+        endpoint = '/api/data/';
+        const trimmedUsername = String(username || '').trim();
+        if (trimmedUsername) {
+          params.username = trimmedUsername;
+        }
       }
 
-      const res = await API.get(url);
+      const res = await API.get(endpoint, { params });
       const { success, message, data } = res.data;
       if (success) {
         setQuotaData(data);

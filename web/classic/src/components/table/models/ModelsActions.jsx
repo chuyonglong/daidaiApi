@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useState } from 'react';
 import MissingModelsModal from './modals/MissingModelsModal';
+import BatchAddModelsModal from './modals/BatchAddModelsModal';
 import PrefillGroupManagement from './modals/PrefillGroupManagement';
 import EditPrefillGroupModal from './modals/EditPrefillGroupModal';
 import { Button, Modal, Popover, RadioGroup, Radio } from '@douyinfe/semi-ui';
@@ -41,11 +42,15 @@ const ModelsActions = ({
   applyUpstreamOverwrite,
   compactMode,
   setCompactMode,
+  activeVendorKey,
+  refresh,
+  loadVendors,
   t,
 }) => {
   // Modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showMissingModal, setShowMissingModal] = useState(false);
+  const [showBatchAddModal, setShowBatchAddModal] = useState(false);
   const [showGroupManagement, setShowGroupManagement] = useState(false);
   const [showAddPrefill, setShowAddPrefill] = useState(false);
   const [prefillInit, setPrefillInit] = useState({ id: undefined });
@@ -126,6 +131,16 @@ const ModelsActions = ({
           onClick={() => setShowMissingModal(true)}
         >
           {t('未配置模型')}
+        </Button>
+
+        <Button
+          type='secondary'
+          className='flex-1 md:flex-initial'
+          size='small'
+          disabled={!activeVendorKey || activeVendorKey === 'all'}
+          onClick={() => setShowBatchAddModal(true)}
+        >
+          {t('批量添加模型')}
         </Button>
 
         <Popover
@@ -223,6 +238,17 @@ const ModelsActions = ({
           setEditingModel({ id: undefined, model_name: name });
           setShowEdit(true);
           setShowMissingModal(false);
+        }}
+        t={t}
+      />
+
+      <BatchAddModelsModal
+        visible={showBatchAddModal}
+        onClose={() => setShowBatchAddModal(false)}
+        vendorId={activeVendorKey !== 'all' ? activeVendorKey : undefined}
+        onSuccess={async () => {
+          await loadVendors?.();
+          await refresh?.();
         }}
         t={t}
       />

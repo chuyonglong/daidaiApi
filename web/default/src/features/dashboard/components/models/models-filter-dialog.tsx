@@ -16,16 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
-import { Filter, RotateCcw, Calendar, Search } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Check,
+  Filter,
+  Loader2,
+  RotateCcw,
+  Calendar,
+  Search,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
-import {
-  getEndOfDay,
-  getRollingDateRange,
-  getStartOfDay,
-  type TimeGranularity,
-} from '@/lib/time'
+import { type TimeGranularity } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -50,17 +52,21 @@ import {
 } from '@/components/ui/select'
 import { DateTimePicker } from '@/components/datetime-picker'
 import {
+  DASHBOARD_TIME_RANGE_PRESETS,
   TIME_GRANULARITY_OPTIONS,
-  TIME_RANGE_PRESETS,
 } from '@/features/dashboard/constants'
 import {
   buildDefaultDashboardFilters,
   cleanFilters,
+  getDashboardTimeRange,
 } from '@/features/dashboard/lib'
 import type {
   DashboardChartPreferences,
   DashboardFilters,
+  DashboardTimeRange,
 } from '@/features/dashboard/types'
+import { searchUsers } from '@/features/users/api'
+import type { User } from '@/features/users/types'
 
 interface ModelsFilterProps {
   preferences: DashboardChartPreferences
@@ -82,8 +88,6 @@ const SectionDivider = ({ label }: { label: string }) => (
   </div>
 )
 
-type QuickRangeKey = number | 'today' | 'thisMonth'
-
 export function ModelsFilter(props: ModelsFilterProps) {
   const { t } = useTranslation()
   // 使用已缓存的用户数据，避免重复调用 API
@@ -94,13 +98,16 @@ export function ModelsFilter(props: ModelsFilterProps) {
   const [filters, setFilters] = useState<DashboardFilters>(() =>
     buildDefaultDashboardFilters(props.preferences)
   )
-  const [selectedRange, setSelectedRange] = useState<QuickRangeKey | null>(
-    () => props.preferences.defaultTimeRangeDays
+  const [selectedRange, setSelectedRange] = useState<DashboardTimeRange | null>(
+    () => props.preferences.defaultTimeRange
   )
+  const [userOptions, setUserOptions] = useState<User[]>([])
+  const [userSearchLoading, setUserSearchLoading] = useState(false)
+  const userSearchSeqRef = useRef(0)
 
   const resetFiltersFromPreferences = () => {
     setFilters(buildDefaultDashboardFilters(props.preferences))
-    setSelectedRange(props.preferences.defaultTimeRangeDays)
+    setSelectedRange(props.preferences.defaultTimeRange)
   }
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -118,14 +125,8 @@ export function ModelsFilter(props: ModelsFilterProps) {
   }
 
   const handleReset = () => {
-    const days = props.preferences.defaultTimeRangeDays
-    const { start, end } = getRollingDateRange(days)
-    setFilters({
-      ...buildDefaultDashboardFilters(props.preferences),
-      start_timestamp: start,
-      end_timestamp: end,
-    })
-    setSelectedRange(days)
+    setFilters(buildDefaultDashboardFilters(props.preferences))
+    setSelectedRange(props.preferences.defaultTimeRange)
     props.onReset()
     setOpen(false)
   }
@@ -139,38 +140,54 @@ export function ModelsFilter(props: ModelsFilterProps) {
       setSelectedRange(null)
   }
 
-  const handleQuickRange = (days: number) => {
-    const { start, end } = getRollingDateRange(days)
+  const handleQuickRange = (range: DashboardTimeRange) => {
+    const { start, end } = getDashboardTimeRange(range)
 
     setFilters((prev) => ({
       ...prev,
       start_timestamp: start,
       end_timestamp: end,
     }))
-    setSelectedRange(days)
+    setSelectedRange(range)
   }
 
-  const handleTodayRange = () => {
-    const now = new Date()
+  const usernameSearchTerm = String(filters.username || '').trim()
+  useEffect(() => {
+    if (!isAdmin || !open) return
 
-    setFilters((prev) => ({
-      ...prev,
-      start_timestamp: getStartOfDay(now),
-      end_timestamp: getEndOfDay(now),
-    }))
-    setSelectedRange('today')
-  }
+    const keyword = usernameSearchTerm
+    if (!keyword) {
+      userSearchSeqRef.current += 1
+      setUserOptions([])
+      setUserSearchLoading(false)
+      return
+    }
 
-  const handleThisMonthRange = () => {
-    const now = new Date()
-    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    const seq = userSearchSeqRef.current + 1
+    userSearchSeqRef.current = seq
+    setUserSearchLoading(true)
 
-    setFilters((prev) => ({
-      ...prev,
-      start_timestamp: getStartOfDay(start),
-      end_timestamp: now,
-    }))
-    setSelectedRange('thisMonth')
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await searchUsers({
+          keyword,
+          p: 1,
+          page_size: 10,
+        })
+        if (seq !== userSearchSeqRef.current) return
+        setUserOptions(response.success ? response.data?.items || [] : [])
+      } catch {
+        if (seq === userSearchSeqRef.current) setUserOptions([])
+      } finally {
+        if (seq === userSearchSeqRef.current) setUserSearchLoading(false)
+      }
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [isAdmin, open, usernameSearchTerm])
+
+  const handleSelectUser = (username: string) => {
+    handleChange('username', username)
   }
 
   return (
@@ -198,45 +215,18 @@ export function ModelsFilter(props: ModelsFilterProps) {
                 {t('Quick Range')}
               </Label>
               <div className='grid grid-cols-2 gap-2 sm:grid-cols-3'>
-                <Button
-                  type='button'
-                  size='sm'
-                  variant={selectedRange === 'today' ? 'default' : 'outline'}
-                  onClick={handleTodayRange}
-                  className={cn(
-                    'flex-1',
-                    selectedRange === 'today' && 'ring-ring ring-2 ring-offset-2'
-                  )}
-                >
-                  {t('Today')}
-                </Button>
-                <Button
-                  type='button'
-                  size='sm'
-                  variant={
-                    selectedRange === 'thisMonth' ? 'default' : 'outline'
-                  }
-                  onClick={handleThisMonthRange}
-                  className={cn(
-                    'flex-1',
-                    selectedRange === 'thisMonth' &&
-                      'ring-ring ring-2 ring-offset-2'
-                  )}
-                >
-                  {t('This Month')}
-                </Button>
-                {TIME_RANGE_PRESETS.map((range) => (
+                {DASHBOARD_TIME_RANGE_PRESETS.map((range) => (
                   <Button
-                    key={range.days}
+                    key={range.value}
                     type='button'
                     size='sm'
                     variant={
-                      selectedRange === range.days ? 'default' : 'outline'
+                      selectedRange === range.value ? 'default' : 'outline'
                     }
-                    onClick={() => handleQuickRange(range.days)}
+                    onClick={() => handleQuickRange(range.value)}
                     className={cn(
                       'flex-1',
-                      selectedRange === range.days &&
+                      selectedRange === range.value &&
                         'ring-ring ring-2 ring-offset-2'
                     )}
                   >
@@ -317,6 +307,60 @@ export function ModelsFilter(props: ModelsFilterProps) {
                     value={filters.username}
                     onChange={(e) => handleChange('username', e.target.value)}
                   />
+                  {usernameSearchTerm && (
+                    <div className='border-input bg-background overflow-hidden rounded-lg border'>
+                      {userSearchLoading ? (
+                        <div className='text-muted-foreground flex items-center gap-2 px-3 py-2 text-sm'>
+                          <Loader2 className='h-4 w-4 animate-spin' />
+                          {t('Searching...')}
+                        </div>
+                      ) : userOptions.length > 0 ? (
+                        <div className='max-h-48 overflow-auto py-1'>
+                          {userOptions.map((userOption) => {
+                            const isSelected =
+                              userOption.username === filters.username
+                            return (
+                              <button
+                                key={`${userOption.id}-${userOption.username}`}
+                                type='button'
+                                onClick={() =>
+                                  handleSelectUser(userOption.username)
+                                }
+                                className='hover:bg-muted flex w-full items-center gap-2 px-3 py-2 text-left text-sm'
+                              >
+                                <Check
+                                  className={cn(
+                                    'h-4 w-4 shrink-0',
+                                    isSelected ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                />
+                                <span className='min-w-0 flex-1'>
+                                  <span className='block truncate font-medium'>
+                                    {userOption.username}
+                                  </span>
+                                  <span className='text-muted-foreground block truncate text-xs'>
+                                    {[
+                                      userOption.display_name,
+                                      userOption.email,
+                                      userOption.id
+                                        ? `ID: ${userOption.id}`
+                                        : undefined,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                  </span>
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div className='text-muted-foreground px-3 py-2 text-sm'>
+                          {t('No results found.')}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}

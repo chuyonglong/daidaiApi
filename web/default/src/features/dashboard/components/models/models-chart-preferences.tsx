@@ -42,12 +42,13 @@ import {
 import {
   CONSUMPTION_DISTRIBUTION_CHART_OPTIONS,
   MODEL_ANALYTICS_CHART_OPTIONS,
+  DASHBOARD_TIME_RANGE_PRESETS,
   TIME_GRANULARITY_OPTIONS,
-  TIME_RANGE_PRESETS,
 } from '@/features/dashboard/constants'
 import type {
   ConsumptionDistributionChartType,
   DashboardChartPreferences,
+  DashboardTimeRange,
   ModelAnalyticsChartTab,
 } from '@/features/dashboard/types'
 
@@ -94,16 +95,16 @@ export function ModelsChartPreferences(props: ModelsChartPreferencesProps) {
             <Label htmlFor='default-time-range'>{t('Default range')}</Label>
             <Select
               items={[
-                ...TIME_RANGE_PRESETS.map((option) => ({
-                  value: String(option.days),
+                ...DASHBOARD_TIME_RANGE_PRESETS.map((option) => ({
+                  value: option.value,
                   label: t(option.label),
                 })),
               ]}
-              value={String(draft.defaultTimeRangeDays)}
+              value={draft.defaultTimeRange}
               onValueChange={(value) =>
                 setDraft((prev) => ({
                   ...prev,
-                  defaultTimeRangeDays: Number(value),
+                  defaultTimeRange: value as DashboardTimeRange,
                 }))
               }
             >
@@ -112,8 +113,8 @@ export function ModelsChartPreferences(props: ModelsChartPreferencesProps) {
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
                 <SelectGroup>
-                  {TIME_RANGE_PRESETS.map((option) => (
-                    <SelectItem key={option.days} value={String(option.days)}>
+                  {DASHBOARD_TIME_RANGE_PRESETS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
                       {t(option.label)}
                     </SelectItem>
                   ))}

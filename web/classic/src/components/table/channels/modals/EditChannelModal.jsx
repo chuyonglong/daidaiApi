@@ -128,6 +128,46 @@ const PARAM_OVERRIDE_OPERATIONS_TEMPLATE = {
 };
 
 const DEPRECATED_DOUBAO_CODING_PLAN_BASE_URL = 'doubao-coding-plan';
+const BASE_URL_OPTIONS_PAGE_SIZE = 1000;
+const XIAOMI_DEFAULT_BASE_URL = 'https://api.xiaomimimo.com';
+
+async function fetchBaseUrlOptions() {
+  const firstPage = await API.get(
+    `/api/channel/?p=1&page_size=${BASE_URL_OPTIONS_PAGE_SIZE}`,
+  );
+  const firstData = firstPage.data?.data;
+  const firstItems = firstData?.items || [];
+  const total = firstData?.total || firstItems.length;
+  const pageCount = Math.ceil(total / BASE_URL_OPTIONS_PAGE_SIZE);
+
+  let items = firstItems;
+  if (pageCount > 1) {
+    const remainingPages = await Promise.all(
+      Array.from({ length: pageCount - 1 }, (_, index) =>
+        API.get(
+          `/api/channel/?p=${index + 2}&page_size=${BASE_URL_OPTIONS_PAGE_SIZE}`,
+        ),
+      ),
+    );
+    items = [
+      ...firstItems,
+      ...remainingPages.flatMap((page) => page.data?.data?.items || []),
+    ];
+  }
+
+  return Array.from(
+    new Set(
+      items
+        .map((channel) =>
+          typeof channel.base_url === 'string' ? channel.base_url.trim() : '',
+        )
+        .filter(Boolean),
+    ),
+  ).map((baseUrl) => ({
+    value: baseUrl,
+    label: baseUrl,
+  }));
+}
 
 // 支持并且已适配通过接口获取模型列表的渠道类型
 const MODEL_FETCHABLE_TYPES = new Set([
@@ -221,6 +261,7 @@ const EditChannelModal = (props) => {
   const [multiKeyMode, setMultiKeyMode] = useState('random');
   const [autoBan, setAutoBan] = useState(true);
   const [inputs, setInputs] = useState(originInputs);
+  const [baseUrlOptions, setBaseUrlOptions] = useState([]);
   const [originModelOptions, setOriginModelOptions] = useState([]);
   const [modelOptions, setModelOptions] = useState([]);
   const [groupOptions, setGroupOptions] = useState([]);
@@ -674,6 +715,13 @@ const EditChannelModal = (props) => {
             base_url: 'https://ark.cn-beijing.volces.com',
           }));
           break;
+        case 58:
+          localModels = getChannelModels(value);
+          setInputs((prevInputs) => ({
+            ...prevInputs,
+            base_url: XIAOMI_DEFAULT_BASE_URL,
+          }));
+          break;
         default:
           localModels = getChannelModels(value);
           break;
@@ -711,6 +759,39 @@ const EditChannelModal = (props) => {
     } catch (error) {
       showError(`${t('JSON格式错误')}: ${error.message}`);
     }
+  };
+
+  const renderBaseUrlDropdownSuffix = () => {
+    if (isEdit) {
+      return null;
+    }
+
+    return (
+      <Dropdown
+        trigger='click'
+        position='bottomRight'
+        render={
+          <Dropdown.Menu className='max-h-60 overflow-y-auto'>
+            {baseUrlOptions.length === 0 ? (
+              <Dropdown.Item disabled>{t('暂无数据')}</Dropdown.Item>
+            ) : (
+              baseUrlOptions.map((option) => (
+                <Dropdown.Item
+                  key={option.value}
+                  onClick={() => handleInputChange('base_url', option.value)}
+                >
+                  <span className='inline-block max-w-[420px] truncate'>
+                    {option.label}
+                  </span>
+                </Dropdown.Item>
+              ))
+            )}
+          </Dropdown.Menu>
+        }
+      >
+        <IconChevronDown className='cursor-pointer text-semi-color-text-2' />
+      </Dropdown>
+    );
   };
 
   const formatUnixTime = (timestamp) => {
@@ -972,6 +1053,13 @@ const EditChannelModal = (props) => {
           (typeof data.base_url === 'string' && data.base_url.trim() === ''))
       ) {
         data.base_url = 'https://ark.cn-beijing.volces.com';
+      }
+      if (
+        data.type === 58 &&
+        (!data.base_url ||
+          (typeof data.base_url === 'string' && data.base_url.trim() === ''))
+      ) {
+        data.base_url = XIAOMI_DEFAULT_BASE_URL;
       }
 
       initialBaseUrlRef.current = data.base_url || '';
@@ -1332,6 +1420,9 @@ const EditChannelModal = (props) => {
       if (isEdit) {
         loadChannel();
       } else {
+        fetchBaseUrlOptions()
+          .then(setBaseUrlOptions)
+          .catch(() => setBaseUrlOptions([]));
         formApiRef.current?.setValues(getInitValues());
         try {
           navigator?.clipboard?.readText()?.then((text) => {
@@ -1352,6 +1443,7 @@ const EditChannelModal = (props) => {
     } else {
       // 统一的模态框关闭重置逻辑
       resetModalState();
+      setBaseUrlOptions([]);
     }
   }, [props.visible, channelId]);
 
@@ -3285,6 +3377,7 @@ const EditChannelModal = (props) => {
                               }
                               showClear
                               disabled={isIonetLocked}
+                              suffix={renderBaseUrlDropdownSuffix()}
                             />
                           </div>
                           <div>
@@ -3340,6 +3433,7 @@ const EditChannelModal = (props) => {
                               }
                               showClear
                               disabled={isIonetLocked}
+                              suffix={renderBaseUrlDropdownSuffix()}
                             />
                           </div>
                         </>
@@ -3372,6 +3466,7 @@ const EditChannelModal = (props) => {
                               }
                               showClear
                               disabled={isIonetLocked}
+                              suffix={renderBaseUrlDropdownSuffix()}
                               extraText={t(
                                 '对于官方渠道，new-api已经内置地址，除非是第三方代理站点或者Azure的特殊接入地址，否则不需要填写',
                               )}
@@ -3392,6 +3487,7 @@ const EditChannelModal = (props) => {
                             }
                             showClear
                             disabled={isIonetLocked}
+                            suffix={renderBaseUrlDropdownSuffix()}
                           />
                         </div>
                       )}
@@ -3411,6 +3507,7 @@ const EditChannelModal = (props) => {
                             }
                             showClear
                             disabled={isIonetLocked}
+                            suffix={renderBaseUrlDropdownSuffix()}
                           />
                         </div>
                       )}

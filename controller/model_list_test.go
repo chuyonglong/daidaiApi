@@ -210,6 +210,16 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.Empty(t, missingExprPricing.BillingExpr)
 }
 
+func TestOpenAIModelCatalogIncludesXiaomiModels(t *testing.T) {
+	models := map[string]string{}
+	for _, model := range openAIModels {
+		models[model.Id] = model.OwnedBy
+	}
+
+	require.Equal(t, "xiaomi", models["MiMo-VL-7B-RL"])
+	require.Equal(t, "xiaomi", models["MiMo-7B-RL"])
+}
+
 func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	withSelfUseModeDisabled(t)
 	withTieredBillingConfig(t, map[string]string{

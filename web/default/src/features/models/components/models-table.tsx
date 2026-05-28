@@ -25,10 +25,12 @@ import {
   type SortingState,
   type VisibilityState,
 } from '@tanstack/react-table'
+import { ListPlus } from 'lucide-react'
 import { useMediaQuery } from '@/hooks'
 import { useTranslation } from 'react-i18next'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { DataTablePage } from '@/components/data-table'
+import { Button } from '@/components/ui/button'
 import { getModels, searchModels, getVendors } from '../api'
 import {
   DEFAULT_PAGE_SIZE,
@@ -44,7 +46,7 @@ const route = getRouteApi('/_authenticated/models/$section')
 
 export function ModelsTable() {
   const { t } = useTranslation()
-  const { selectedVendor } = useModels()
+  const { setOpen, setSelectedVendor } = useModels()
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   // Table state
@@ -110,12 +112,33 @@ export function ModelsTable() {
   // Determine whether to use search or regular list API
   const shouldSearch = Boolean(globalFilter?.trim())
 
-  // Apply selected vendor from context or filter
+  // Keep the page-level actions aware of the active vendor filter.
   const activeVendorFilter =
-    selectedVendor ||
-    (vendorFilter.length > 0 && !vendorFilter.includes('all')
+    vendorFilter.length > 0 && !vendorFilter.includes('all')
       ? vendorFilter[0]
-      : undefined)
+      : undefined
+
+  const selectedVendorId = useMemo(() => {
+    const value = activeVendorFilter?.trim()
+    if (!value) return null
+
+    const vendorById = vendors.find((vendor) => String(vendor.id) === value)
+    if (vendorById) return String(vendorById.id)
+
+    const vendorByName = vendors.find((vendor) => vendor.name === value)
+    if (vendorByName) return String(vendorByName.id)
+
+    return /^\d+$/.test(value) ? value : null
+  }, [activeVendorFilter, vendors])
+
+  useEffect(() => {
+    setSelectedVendor(selectedVendorId)
+  }, [selectedVendorId, setSelectedVendor])
+
+  const handleBatchAddModels = () => {
+    if (!selectedVendorId) return
+    setOpen('batch-add-models')
+  }
 
   // Fetch models data
   // eslint-disable-next-line @tanstack/query/exhaustive-deps
@@ -253,6 +276,22 @@ export function ModelsTable() {
             singleSelect: true,
           },
         ],
+        preActions: (
+          <Button
+            onClick={handleBatchAddModels}
+            size='sm'
+            variant='outline'
+            disabled={!selectedVendorId}
+            title={
+              selectedVendorId
+                ? t('Batch add models to the selected vendor')
+                : t('Select a vendor first')
+            }
+          >
+            <ListPlus className='h-4 w-4' />
+            {t('Batch Add Models')}
+          </Button>
+        ),
       }}
       bulkActions={<DataTableBulkActions table={table} />}
     />

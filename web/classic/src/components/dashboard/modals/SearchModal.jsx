@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Form, Button } from '@douyinfe/semi-ui';
-import { timestamp2string } from '../../../helpers';
+import { API, timestamp2string } from '../../../helpers';
 
 const getStartOfDay = (date = new Date()) => {
   const result = new Date(date);
@@ -85,7 +85,11 @@ const SearchModal = ({
   t,
 }) => {
   const formApiRef = useRef(null);
+  const userSearchTimerRef = useRef(null);
+  const userSearchSeqRef = useRef(0);
   const [selectedQuickRange, setSelectedQuickRange] = useState(null);
+  const [userOptions, setUserOptions] = useState([]);
+  const [userSearching, setUserSearching] = useState(false);
 
   const FORM_FIELD_PROPS = {
     className: 'w-full mb-2 !rounded-lg',
@@ -122,6 +126,76 @@ const SearchModal = ({
     handleInputChange(value, name);
   };
 
+  const mapUserToOption = (user) => ({
+    value: user.username,
+    label: user.username,
+    displayName: user.display_name,
+    email: user.email,
+    id: user.id,
+  });
+
+  const renderUserOption = (item) => (
+    <div className='flex flex-col py-1'>
+      <span className='font-medium'>{item.label}</span>
+      <span className='text-xs text-gray-500'>
+        {[item.displayName, item.email, item.id ? `ID: ${item.id}` : '']
+          .filter(Boolean)
+          .join(' · ')}
+      </span>
+    </div>
+  );
+
+  const searchUserOptions = useCallback(
+    (keyword) => {
+      const nextKeyword = String(keyword || '').trim();
+      handleInputChange(keyword || '', 'username');
+
+      if (userSearchTimerRef.current) {
+        clearTimeout(userSearchTimerRef.current);
+      }
+
+      if (!nextKeyword) {
+        userSearchSeqRef.current += 1;
+        setUserOptions([]);
+        setUserSearching(false);
+        return;
+      }
+
+      const seq = userSearchSeqRef.current + 1;
+      userSearchSeqRef.current = seq;
+      setUserSearching(true);
+      userSearchTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await API.get('/api/user/search', {
+            params: {
+              keyword: nextKeyword,
+              p: 1,
+              page_size: 10,
+            },
+          });
+          if (seq !== userSearchSeqRef.current) return;
+          const users = res?.data?.success ? res.data.data?.items || [] : [];
+          setUserOptions(
+            users.map(mapUserToOption).filter((item) => item.value),
+          );
+        } catch (error) {
+          if (seq === userSearchSeqRef.current) {
+            setUserOptions([]);
+          }
+        } finally {
+          if (seq === userSearchSeqRef.current) {
+            setUserSearching(false);
+          }
+        }
+      }, 300);
+    },
+    [handleInputChange],
+  );
+
+  const handleUserChange = (value) => {
+    handleInputChange(value || '', 'username');
+  };
+
   const handleModalClose = () => {
     setSelectedQuickRange(null);
     handleCloseModal();
@@ -143,6 +217,14 @@ const SearchModal = ({
     username,
     syncFormValues,
   ]);
+
+  useEffect(() => {
+    return () => {
+      if (userSearchTimerRef.current) {
+        clearTimeout(userSearchTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <Modal
@@ -210,13 +292,25 @@ const SearchModal = ({
         })}
 
         {isAdminUser &&
-          createFormField(Form.Input, {
+          createFormField(Form.AutoComplete, {
             field: 'username',
             label: t('用户名称'),
             value: username,
             placeholder: t('可选值'),
             name: 'username',
-            onChange: (value) => handleInputChange(value, 'username'),
+            data: userOptions,
+            renderItem: renderUserOption,
+            renderSelectedItem: (item) => item.value,
+            showClear: true,
+            loading: userSearching,
+            onSearch: searchUserOptions,
+            onChange: handleUserChange,
+            onClear: () => {
+              userSearchSeqRef.current += 1;
+              setUserOptions([]);
+              setUserSearching(false);
+              handleUserChange('');
+            },
           })}
       </Form>
     </Modal>

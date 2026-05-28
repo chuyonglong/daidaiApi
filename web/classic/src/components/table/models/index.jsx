@@ -175,6 +175,9 @@ const ModelsPage = () => {
               applyUpstreamOverwrite={modelsData.applyUpstreamOverwrite}
               compactMode={compactMode}
               setCompactMode={setCompactMode}
+              activeVendorKey={modelsData.activeVendorKey}
+              refresh={modelsData.refresh}
+              loadVendors={modelsData.loadVendors}
               t={t}
             />
 

@@ -16,11 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
+import {
+  getEndOfDay,
+  getRollingDateRange,
+  getStartOfDay,
+  type TimeGranularity,
+} from '@/lib/time'
 import {
   DASHBOARD_CHART_PREFERENCES_STORAGE_KEY,
   DEFAULT_DASHBOARD_CHART_PREFERENCES,
   DEFAULT_TIME_GRANULARITY,
+  DASHBOARD_TIME_RANGE_PRESETS,
   EMPTY_DASHBOARD_FILTERS,
   TIME_GRANULARITY_STORAGE_KEY,
   TIME_RANGE_PRESETS,
@@ -30,6 +36,7 @@ import type {
   ConsumptionDistributionChartType,
   DashboardChartPreferences,
   DashboardFilters,
+  DashboardTimeRange,
   ModelAnalyticsChartTab,
 } from '@/features/dashboard/types'
 
@@ -55,8 +62,42 @@ function isModelAnalyticsChartTab(
   return value === 'trend' || value === 'proportion' || value === 'top'
 }
 
-function isTimeRangePresetDays(value: unknown): value is number {
-  return TIME_RANGE_PRESETS.some((preset) => preset.days === value)
+function isDashboardTimeRange(value: unknown): value is DashboardTimeRange {
+  return DASHBOARD_TIME_RANGE_PRESETS.some((preset) => preset.value === value)
+}
+
+function getLegacyTimeRange(value: unknown): DashboardTimeRange | undefined {
+  return TIME_RANGE_PRESETS.find((preset) => preset.days === value)?.value
+}
+
+function getTimeRangeDays(value: DashboardTimeRange): number | undefined {
+  return TIME_RANGE_PRESETS.find((preset) => preset.value === value)?.days
+}
+
+type SavedDashboardChartPreferences = Partial<DashboardChartPreferences> & {
+  defaultTimeRangeDays?: unknown
+}
+
+export function getDashboardTimeRange(
+  range: DashboardTimeRange,
+  fromDate: Date = new Date()
+): { start: Date; end: Date } {
+  if (range === 'today') {
+    return {
+      start: getStartOfDay(fromDate),
+      end: getEndOfDay(fromDate),
+    }
+  }
+
+  if (range === 'thisMonth') {
+    const start = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1)
+    return {
+      start: getStartOfDay(start),
+      end: new Date(fromDate),
+    }
+  }
+
+  return getRollingDateRange(Number(range), fromDate)
 }
 
 export function cleanFilters<T extends Record<string, unknown>>(
@@ -103,7 +144,10 @@ export function getSavedChartPreferences(): DashboardChartPreferences {
     const raw = localStorage.getItem(DASHBOARD_CHART_PREFERENCES_STORAGE_KEY)
     if (!raw) return fallbackPreferences
 
-    const parsed = JSON.parse(raw) as Partial<DashboardChartPreferences>
+    const parsed = JSON.parse(raw) as SavedDashboardChartPreferences
+    const defaultTimeRange = isDashboardTimeRange(parsed.defaultTimeRange)
+      ? parsed.defaultTimeRange
+      : getLegacyTimeRange(parsed.defaultTimeRangeDays)
     return {
       consumptionDistributionChart: isConsumptionDistributionChartType(
         parsed.consumptionDistributionChart
@@ -113,9 +157,8 @@ export function getSavedChartPreferences(): DashboardChartPreferences {
       modelAnalyticsChart: isModelAnalyticsChartTab(parsed.modelAnalyticsChart)
         ? parsed.modelAnalyticsChart
         : fallbackPreferences.modelAnalyticsChart,
-      defaultTimeRangeDays: isTimeRangePresetDays(parsed.defaultTimeRangeDays)
-        ? parsed.defaultTimeRangeDays
-        : fallbackPreferences.defaultTimeRangeDays,
+      defaultTimeRange:
+        defaultTimeRange ?? fallbackPreferences.defaultTimeRange,
       defaultTimeGranularity: isTimeGranularity(parsed.defaultTimeGranularity)
         ? parsed.defaultTimeGranularity
         : fallbackPreferences.defaultTimeGranularity,
@@ -136,14 +179,16 @@ export function saveChartPreferences(
 }
 
 export function getDefaultDays(granularity?: TimeGranularity): number {
-  if (!granularity) return getSavedChartPreferences().defaultTimeRangeDays
+  if (!granularity) {
+    return getTimeRangeDays(getSavedChartPreferences().defaultTimeRange) ?? 1
+  }
   return TIME_RANGE_BY_GRANULARITY[getSavedGranularity(granularity)]
 }
 
 export function buildDefaultDashboardFilters(
   preferences: DashboardChartPreferences = getSavedChartPreferences()
 ): DashboardFilters {
-  const { start, end } = getRollingDateRange(preferences.defaultTimeRangeDays)
+  const { start, end } = getDashboardTimeRange(preferences.defaultTimeRange)
   return {
     ...EMPTY_DASHBOARD_FILTERS,
     start_timestamp: start,

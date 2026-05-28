@@ -212,6 +212,19 @@ export interface MissingModelsResponse {
 }
 
 /**
+ * Batch create models response
+ */
+export interface BatchCreateModelsResponse {
+  success: boolean
+  message?: string
+  data?: {
+    created_count: number
+    skipped_count: number
+    skipped_models?: string[]
+  }
+}
+
+/**
  * Prefill groups response
  */
 export interface PrefillGroupsResponse {

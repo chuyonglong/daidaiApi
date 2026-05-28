@@ -113,6 +113,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'deepseek-chat,deepseek-coder',
     },
   },
+  58: {
+    id: 58,
+    name: CHANNEL_TYPES[58],
+    icon: 'xiaomi',
+    defaultBaseUrl: 'https://api.xiaomimimo.com',
+    hints: {
+      baseUrl: 'Default: https://api.xiaomimimo.com',
+      key: 'Xiaomi MiMo API Key',
+      models: 'MiMo-VL-7B-RL,MiMo-7B-RL',
+    },
+  },
   20: {
     id: 20,
     name: CHANNEL_TYPES[20],

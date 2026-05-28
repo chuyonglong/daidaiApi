@@ -29,6 +29,7 @@ import type {
   SyncUpstreamResponse,
   PreviewUpstreamDiffResponse,
   MissingModelsResponse,
+  BatchCreateModelsResponse,
   PrefillGroupsResponse,
   SyncLocale,
   SyncSource,
@@ -235,6 +236,17 @@ export async function applyUpstreamOverwrite(params: {
  */
 export async function getMissingModels(): Promise<MissingModelsResponse> {
   const res = await api.get('/api/models/missing')
+  return res.data
+}
+
+/**
+ * Batch create missing models and bind them to a vendor
+ */
+export async function batchCreateModels(data: {
+  vendor_id: number
+  model_names: string[]
+}): Promise<BatchCreateModelsResponse> {
+  const res = await api.post('/api/models/batch', data)
   return res.data
 }
 

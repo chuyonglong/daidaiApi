@@ -22,6 +22,7 @@ import (
 
 	//"github.com/QuantumNous/new-api/relay/channel/minimax"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
+	"github.com/QuantumNous/new-api/relay/channel/xiaomi"
 	"github.com/QuantumNous/new-api/relay/channel/xinference"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/common_handler"
@@ -174,7 +175,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, header)
-	if info.ChannelType == constant.ChannelTypeAzure {
+	if info.ChannelType == constant.ChannelTypeAzure || info.ChannelType == constant.ChannelTypeXiaomi {
 		header.Set("api-key", info.ApiKey)
 		return nil
 	}
@@ -656,6 +657,8 @@ func (a *Adaptor) GetModelList() []string {
 		return xinference.ModelList
 	case constant.ChannelTypeOpenRouter:
 		return openrouter.ModelList
+	case constant.ChannelTypeXiaomi:
+		return xiaomi.ModelList
 	default:
 		return ModelList
 	}
@@ -673,6 +676,8 @@ func (a *Adaptor) GetChannelName() string {
 		return xinference.ChannelName
 	case constant.ChannelTypeOpenRouter:
 		return openrouter.ChannelName
+	case constant.ChannelTypeXiaomi:
+		return xiaomi.ChannelName
 	default:
 		return ChannelName
 	}
