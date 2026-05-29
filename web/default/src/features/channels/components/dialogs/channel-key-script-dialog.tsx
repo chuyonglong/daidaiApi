@@ -223,7 +223,7 @@ export function ChannelKeyScriptDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className='max-h-[90vh] max-w-4xl overflow-y-auto'>
+        <DialogContent className='flex max-h-[90vh] max-w-[calc(100%-2rem)] flex-col overflow-hidden sm:max-w-5xl'>
           <DialogHeader>
             <DialogTitle>{t('Python Key Script')}</DialogTitle>
             <DialogDescription>
@@ -232,7 +232,7 @@ export function ChannelKeyScriptDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className='space-y-5'>
+          <div className='min-h-0 flex-1 space-y-5 overflow-y-auto pr-1'>
             {!isMultiKey && (
               <Alert>
                 <AlertDescription>
@@ -243,93 +243,99 @@ export function ChannelKeyScriptDialog({
               </Alert>
             )}
 
-            <div className='space-y-2'>
-              <Label htmlFor='channel-key-python-script'>
-                {t('Python Script')}
-              </Label>
-              <Textarea
-                id='channel-key-python-script'
-                value={script}
-                onChange={(event) => setScript(event.target.value)}
-                placeholder={t('Paste Python script here')}
-                rows={12}
-                className='font-mono text-xs'
-                disabled={isLoading}
-              />
-            </div>
-
-            <div className='grid gap-4 md:grid-cols-2'>
+            <div className='grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]'>
               <div className='space-y-2'>
-                <Label>{t('Execution Output')}</Label>
+                <Label htmlFor='channel-key-python-script'>
+                  {t('Python Script')}
+                </Label>
                 <Textarea
-                  readOnly
-                  value={output}
-                  rows={8}
-                  className='font-mono text-xs'
-                  placeholder={t('Script output will appear here')}
+                  id='channel-key-python-script'
+                  value={script}
+                  onChange={(event) => setScript(event.target.value)}
+                  placeholder={t('Paste Python script here')}
+                  rows={24}
+                  className='min-h-[24rem] resize-y font-mono text-xs'
+                  disabled={isLoading}
                 />
               </div>
-              <div className='space-y-2'>
-                <Label>{t('Extracted Keys')}</Label>
-                <Textarea
-                  readOnly
-                  value={extractedKeys.join('\n')}
-                  rows={8}
-                  className='font-mono text-xs'
-                  placeholder={t('Extracted sk-* keys will appear here')}
-                />
-              </div>
-            </div>
 
-            <div className='space-y-2'>
-              <div className='flex items-center justify-between gap-2'>
-                <Label>{t('Merged Keys')}</Label>
-                <div className='flex gap-2'>
-                  <Button
-                    type='button'
-                    variant='outline'
-                    size='sm'
-                    onClick={() => copyToClipboard(mergedKey)}
-                    disabled={!mergedKey}
-                  >
-                    <Clipboard className='mr-2 h-4 w-4' />
-                    {t('Copy')}
-                  </Button>
-                  <Button
-                    type='button'
-                    variant='outline'
-                    size='sm'
-                    onClick={handleBackfill}
-                    disabled={!mergedKey}
-                  >
-                    <Download className='mr-2 h-4 w-4' />
-                    {t('Backfill')}
-                  </Button>
+              <div className='space-y-4'>
+                <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2'>
+                  <div className='space-y-2'>
+                    <Label>{t('Execution Output')}</Label>
+                    <Textarea
+                      readOnly
+                      value={output}
+                      rows={8}
+                      className='min-h-32 font-mono text-xs'
+                      placeholder={t('Script output will appear here')}
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <Label>{t('Extracted Keys')}</Label>
+                    <Textarea
+                      readOnly
+                      value={extractedKeys.join('\n')}
+                      rows={8}
+                      className='min-h-32 font-mono text-xs'
+                      placeholder={t('Extracted sk-* keys will appear here')}
+                    />
+                  </div>
+                </div>
+
+                <div className='space-y-2'>
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <Label>{t('Merged Keys')}</Label>
+                    <div className='flex gap-2'>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={() => copyToClipboard(mergedKey)}
+                        disabled={!mergedKey}
+                      >
+                        <Clipboard className='mr-2 h-4 w-4' />
+                        {t('Copy')}
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={handleBackfill}
+                        disabled={!mergedKey}
+                      >
+                        <Download className='mr-2 h-4 w-4' />
+                        {t('Backfill')}
+                      </Button>
+                    </div>
+                  </div>
+                  <Textarea
+                    readOnly
+                    value={mergedKey}
+                    rows={6}
+                    className='font-mono text-xs'
+                    placeholder={t('Existing keys plus newly extracted keys')}
+                  />
+                </div>
+
+                <div className='space-y-2'>
+                  <Label htmlFor='channel-key-backfill'>
+                    {t('Backfill Keys')}
+                  </Label>
+                  <Textarea
+                    id='channel-key-backfill'
+                    value={backfillKey}
+                    onChange={(event) => setBackfillKey(event.target.value)}
+                    rows={6}
+                    className='font-mono text-xs'
+                    placeholder={t('Fill or edit keys before saving')}
+                  />
                 </div>
               </div>
-              <Textarea
-                readOnly
-                value={mergedKey}
-                rows={6}
-                className='font-mono text-xs'
-                placeholder={t('Existing keys plus newly extracted keys')}
-              />
-            </div>
-
-            <div className='space-y-2'>
-              <Label htmlFor='channel-key-backfill'>{t('Backfill Keys')}</Label>
-              <Textarea
-                id='channel-key-backfill'
-                value={backfillKey}
-                onChange={(event) => setBackfillKey(event.target.value)}
-                rows={6}
-                className='font-mono text-xs'
-                placeholder={t('Fill or edit keys before saving')}
-              />
             </div>
           </div>
 
-          <DialogFooter className='gap-2'>
+          <DialogFooter className='shrink-0 gap-2'>
             <Button
               variant='outline'
               onClick={() => onOpenChange(false)}

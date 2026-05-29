@@ -1547,6 +1547,7 @@
     "Excellent": "Excellent",
     "Exchange rate is required": "Exchange rate is required",
     "Exchange rate must be greater than 0": "Exchange rate must be greater than 0",
+    "Execute": "Execute",
     "Execute code in a sandbox during the response": "Execute code in a sandbox during the response",
     "Execution Output": "Execution Output",
     "Exhausted": "Exhausted",
@@ -3149,6 +3150,7 @@
     "Purchase limit reached": "Purchase limit reached",
     "Purchase Subscription": "Purchase Subscription",
     "Python Key Script": "Python Key Script",
+    "Python Script": "Python Script",
     "QR Code Image URL": "QR Code Image URL",
     "QR code is not configured. Please contact support.": "QR code is not configured. Please contact support.",
     "Quantity": "Quantity",
@@ -3528,6 +3530,7 @@
     "Search the public web at inference time": "Search the public web at inference time",
     "Search vendors...": "Search vendors...",
     "Search...": "Search...",
+    "Searching...": "Searching...",
     "seconds": "seconds",
     "Secret env (JSON object)": "Secret env (JSON object)",
     "Secret environment variables (JSON)": "Secret environment variables (JSON)",
@@ -4525,7 +4528,6 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom",
-    "Searching...": "Searching..."
+    "Zoom": "Zoom"
   }
 }
