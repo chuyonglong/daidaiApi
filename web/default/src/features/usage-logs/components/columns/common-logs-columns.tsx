@@ -293,6 +293,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     columns.push(
       {
         id: 'channel',
+        accessorFn: (row) => row.channel,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('Channel')} />
         ),
@@ -391,6 +392,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               </Tooltip>
             </TooltipProvider>
           )
+        },
+        filterFn: (row, _id, value) => {
+          if (value === undefined || value === null || value === '') return true
+          return String(row.original.channel) === String(value)
         },
         meta: { label: t('Channel'), mobileHidden: true },
       },

@@ -39,6 +39,7 @@ import type {
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
 } from '../types'
+import { normalizeChannelIdInput } from './channel-filter'
 
 // ============================================================================
 // Type Checkers & Utilities
@@ -154,13 +155,14 @@ export function buildBaseParams(config: {
   end_timestamp?: number
 } {
   const { page, pageSize, searchParams, useMilliseconds = false } = config
+  const channelId = normalizeChannelIdInput(searchParams.channel)
 
   return {
     p: page,
     page_size: pageSize,
-    ...(searchParams.channel
+    ...(channelId
       ? {
-          channel_id: String(searchParams.channel),
+          channel_id: channelId,
         }
       : {}),
     ...buildTimeRangeParams(searchParams, useMilliseconds),
@@ -178,6 +180,7 @@ export function buildApiParams(config: {
   isAdmin: boolean
 }): GetLogsParams {
   const { page, pageSize, searchParams, columnFilters = [], isAdmin } = config
+  const channelId = normalizeChannelIdInput(searchParams.channel)
 
   // Helper to process type parameter (single value from array)
   const processType = (value: unknown) => {
@@ -195,9 +198,7 @@ export function buildApiParams(config: {
     ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
     ...(searchParams.token ? { token_name: String(searchParams.token) } : {}),
     ...(searchParams.group ? { group: String(searchParams.group) } : {}),
-    ...(isAdmin && searchParams.channel
-      ? { channel: Number(searchParams.channel) || 0 }
-      : {}),
+    ...(isAdmin && channelId ? { channel: Number(channelId) } : {}),
     ...(isAdmin && searchParams.username
       ? { username: String(searchParams.username) }
       : {}),
@@ -229,7 +230,14 @@ export function buildApiParams(config: {
           params.group = String(value)
           break
         case 'channel':
-          if (isAdmin) params.channel = Number(value) || 0
+          if (isAdmin) {
+            const normalizedChannelId = normalizeChannelIdInput(value)
+            if (normalizedChannelId) {
+              params.channel = Number(normalizedChannelId)
+            } else {
+              delete params.channel
+            }
+          }
           break
         case 'username':
           if (isAdmin) params.username = String(value)

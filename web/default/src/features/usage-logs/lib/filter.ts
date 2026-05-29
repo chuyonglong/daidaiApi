@@ -27,6 +27,7 @@ import type {
   DrawingLogFilters,
   TaskLogFilters,
 } from '../types'
+import { normalizeChannelIdInput } from './channel-filter'
 
 // ============================================================================
 // Filter Building Functions
@@ -39,10 +40,11 @@ export function buildSearchParams(
   filters: LogFilters,
   logCategory: LogCategory
 ): Record<string, unknown> {
+  const channelId = normalizeChannelIdInput(filters.channel)
   const baseParams: Record<string, unknown> = {
     ...(filters.startTime && { startTime: filters.startTime.getTime() }),
     ...(filters.endTime && { endTime: filters.endTime.getTime() }),
-    ...(filters.channel && { channel: filters.channel }),
+    ...(channelId && { channel: channelId }),
   }
 
   switch (logCategory) {

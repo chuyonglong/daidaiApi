@@ -33,6 +33,7 @@ export {
 
 // Filter utilities
 export { buildSearchParams, getLogCategoryLabel } from './filter'
+export { normalizeChannelIdInput } from './channel-filter'
 
 // General utilities
 export {
