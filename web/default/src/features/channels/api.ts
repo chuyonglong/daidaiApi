@@ -27,6 +27,8 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelKeyScriptExecuteResponse,
+  ChannelKeyScriptResponse,
   ChannelTestResponse,
   CopyChannelParams,
   CopyChannelResponse,
@@ -261,6 +263,39 @@ export async function getChannelKey(
 ): Promise<{ success: boolean; message?: string; data?: { key: string } }> {
   const payload = code ? { code } : undefined
   const res = await api.post(`/api/channel/${id}/key`, payload)
+  return res.data
+}
+
+export async function getChannelKeyScript(
+  id: number
+): Promise<ChannelKeyScriptResponse> {
+  const res = await api.get(`/api/channel/${id}/key_script`)
+  return res.data
+}
+
+export async function saveChannelKeyScript(
+  id: number,
+  script: string
+): Promise<ChannelKeyScriptResponse> {
+  const res = await api.post(`/api/channel/${id}/key_script`, { script })
+  return res.data
+}
+
+export async function executeChannelKeyScript(
+  id: number,
+  script: string
+): Promise<ChannelKeyScriptExecuteResponse> {
+  const res = await api.post(`/api/channel/${id}/key_script/execute`, {
+    script,
+  })
+  return res.data
+}
+
+export async function backfillChannelKeyScript(
+  id: number,
+  key: string
+): Promise<{ success: boolean; message?: string; data?: Channel }> {
+  const res = await api.post(`/api/channel/${id}/key_script/backfill`, { key })
   return res.data
 }
 

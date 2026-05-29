@@ -2072,7 +2072,10 @@ export function ChannelMutateDrawer({
                               <SelectValue />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent alignItemWithTrigger={false}>
+                          <SelectContent
+                            alignItemWithTrigger={false}
+                            className='w-max max-w-[min(24rem,calc(100vw-2rem))] min-w-(--anchor-width)'
+                          >
                             <SelectGroup>
                               {ADD_MODE_OPTIONS.map((option) => (
                                 <SelectItem

@@ -139,6 +139,38 @@ export interface GetChannelResponse {
   data?: Channel
 }
 
+export interface ChannelKeyScript {
+  id: number
+  channel_id: number
+  script: string
+  last_status: string
+  last_message: string
+  last_output: string
+  last_keys: string
+  created_time: number
+  updated_time: number
+}
+
+export interface ChannelKeyScriptExecuteData {
+  keys: string[]
+  merged_key: string
+  output: string
+  is_output_trimmed: boolean
+  is_multi_key: boolean
+}
+
+export interface ChannelKeyScriptResponse {
+  success: boolean
+  message?: string
+  data?: ChannelKeyScript
+}
+
+export interface ChannelKeyScriptExecuteResponse {
+  success: boolean
+  message?: string
+  data?: ChannelKeyScriptExecuteData
+}
+
 export interface ChannelTestResponse {
   success: boolean
   message?: string

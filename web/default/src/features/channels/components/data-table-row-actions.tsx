@@ -34,6 +34,7 @@ import {
   Trash2,
   RefreshCw,
   Loader2,
+  FileCode2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -122,6 +123,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     setOpen('copy-channel')
   }
 
+  const handleKeyScript = () => {
+    setCurrentRow(channel)
+    setOpen('key-script')
+  }
+
   const handleManageKeys = () => {
     setCurrentRow(channel)
     setOpen('multi-key-manage')
@@ -190,6 +196,22 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         <TooltipContent>
           {isEnabled ? t('Disable') : t('Enable')}
         </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              onClick={handleKeyScript}
+              aria-label={t('Python Key Script')}
+            />
+          }
+        >
+          <FileCode2 className='size-4' />
+        </TooltipTrigger>
+        <TooltipContent>{t('Python Key Script')}</TooltipContent>
       </Tooltip>
 
       <DropdownMenu>
@@ -275,6 +297,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           )}
 
           <DropdownMenuSeparator />
+
+          {/* Python Key Script */}
+          <DropdownMenuItem onClick={handleKeyScript}>
+            {t('Python Key Script')}
+            <DropdownMenuShortcut>
+              <FileCode2 size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
 
           {/* Copy Channel */}
           <DropdownMenuItem onClick={handleCopy}>

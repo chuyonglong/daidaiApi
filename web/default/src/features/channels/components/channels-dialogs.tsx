@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useChannels } from './channels-provider'
 import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
 import { BatchCreateChannelsDialog } from './dialogs/batch-create-channels-dialog'
+import { ChannelKeyScriptDialog } from './dialogs/channel-key-script-dialog'
 import { ChannelTestDialog } from './dialogs/channel-test-dialog'
 import { CopyChannelDialog } from './dialogs/copy-channel-dialog'
 import { EditTagDialog } from './dialogs/edit-tag-dialog'
@@ -68,6 +69,12 @@ export function ChannelsDialogs() {
       {/* Ollama Models Dialog */}
       <OllamaModelsDialog
         open={open === 'ollama-models'}
+        onOpenChange={(v) => !v && setOpen(null)}
+      />
+
+      {/* Key Script Dialog */}
+      <ChannelKeyScriptDialog
+        open={open === 'key-script'}
         onOpenChange={(v) => !v && setOpen(null)}
       />
 
