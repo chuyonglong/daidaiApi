@@ -555,10 +555,6 @@ export function ChannelMutateDrawer({
     }
   }, [open, channelId])
 
-  // Check if this is a multi-key channel
-  const isMultiKeyChannel =
-    isEditing && channelData?.data?.channel_info?.is_multi_key === true
-
   // Form setup
   const form = useForm<ChannelFormValues>({
     resolver: zodResolver(channelFormSchema),
@@ -598,8 +594,12 @@ export function ChannelMutateDrawer({
   }, [open, resetDoubaoApiUnlock])
 
   // Helper computed values
+  const isMultiKeyMode = multiKeyMode === 'multi_to_single'
   const isBatchMode =
     multiKeyMode === 'batch' || multiKeyMode === 'multi_to_single'
+  const addModeOptions = isEditing
+    ? ADD_MODE_OPTIONS.filter((option) => option.value !== 'batch')
+    : ADD_MODE_OPTIONS
 
   // Get all models list
   const allModelsList = useMemo(
@@ -1253,13 +1253,18 @@ export function ChannelMutateDrawer({
         if (isEditing && currentRow) {
           // Update existing channel
           const payload = transformFormDataToUpdatePayload(data, currentRow.id)
-          const payloadWithKeyMode =
-            isMultiKeyChannel && data.key_mode
-              ? {
-                  ...payload,
-                  key_mode: data.key_mode,
-                }
-              : payload
+          const payloadWithKeyMode = {
+            ...payload,
+            is_multi_key: data.multi_key_mode === 'multi_to_single',
+            multi_key_mode:
+              data.multi_key_mode === 'multi_to_single'
+                ? data.multi_key_type
+                : undefined,
+            key_mode:
+              data.multi_key_mode === 'multi_to_single'
+                ? data.key_mode
+                : undefined,
+          }
 
           const response = await updateChannel(
             currentRow.id,
@@ -1287,7 +1292,6 @@ export function ChannelMutateDrawer({
     [
       isEditing,
       currentRow,
-      isMultiKeyChannel,
       form,
       handleSuccess,
       confirmMissingModelMappings,
@@ -2050,52 +2054,50 @@ export function ChannelMutateDrawer({
                     icon={<KeyRound className='h-3.5 w-3.5' />}
                   />
                 </div>
-                {!isEditing && (
-                  <FormField
-                    control={form.control}
-                    name='multi_key_mode'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Add Mode')}</FormLabel>
-                        <Select
-                          items={[
-                            ...ADD_MODE_OPTIONS.map((option) => ({
-                              value: option.value,
-                              label: t(option.label),
-                            })),
-                          ]}
-                          onValueChange={field.onChange}
-                          value={field.value}
+                <FormField
+                  control={form.control}
+                  name='multi_key_mode'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Add Mode')}</FormLabel>
+                      <Select
+                        items={[
+                          ...addModeOptions.map((option) => ({
+                            value: option.value,
+                            label: t(option.label),
+                          })),
+                        ]}
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent
+                          alignItemWithTrigger={false}
+                          className='w-max max-w-[min(24rem,calc(100vw-2rem))] min-w-(--anchor-width)'
                         >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent
-                            alignItemWithTrigger={false}
-                            className='w-max max-w-[min(24rem,calc(100vw-2rem))] min-w-(--anchor-width)'
-                          >
-                            <SelectGroup>
-                              {ADD_MODE_OPTIONS.map((option) => (
-                                <SelectItem
-                                  key={option.value}
-                                  value={option.value}
-                                >
-                                  {t(option.label)}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          {t(FIELD_DESCRIPTIONS.BATCH_ADD)}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                          <SelectGroup>
+                            {addModeOptions.map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {t(option.label)}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {t(FIELD_DESCRIPTIONS.BATCH_ADD)}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}
@@ -2144,7 +2146,7 @@ export function ChannelMutateDrawer({
                                   {t(
                                     'Enter new key to update, or leave empty to keep current key'
                                   )}
-                                  {isMultiKeyChannel && (
+                                  {isMultiKeyMode && (
                                     <span className='text-warning mt-1 block'>
                                       {t('Multi-key channel: Keys will be')}{' '}
                                       {keyMode === 'replace'
@@ -2298,7 +2300,7 @@ export function ChannelMutateDrawer({
                   }}
                 />
 
-                {isEditing && isMultiKeyChannel && (
+                {isEditing && isMultiKeyMode && (
                   <FormField
                     control={form.control}
                     name='key_mode'
@@ -2350,7 +2352,7 @@ export function ChannelMutateDrawer({
                   />
                 )}
 
-                {!isEditing && multiKeyMode === 'multi_to_single' && (
+                {isMultiKeyMode && (
                   <FormField
                     control={form.control}
                     name='multi_key_type'

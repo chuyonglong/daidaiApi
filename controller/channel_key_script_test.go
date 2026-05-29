@@ -1,10 +1,14 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"os/exec"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -32,6 +36,50 @@ func TestMergeChannelKeyScriptKeysAppendsOnlyNewKeys(t *testing.T) {
 	merged := mergeChannelKeyScriptKeys("sk-old\n sk-same \n", []string{"sk-new", "sk-same", "sk-newer"})
 
 	require.Equal(t, "sk-old\nsk-same\nsk-new\nsk-newer", merged)
+}
+
+func TestBuildChannelKeyPythonEnvForcesUtf8AndReplacesExistingValues(t *testing.T) {
+	env := buildChannelKeyPythonEnv([]string{
+		"PATH=C:\\Python",
+		"PYTHONIOENCODING=gbk",
+		"pythonutf8=0",
+		"OTHER=value",
+	})
+
+	require.Contains(t, env, "PATH=C:\\Python")
+	require.Contains(t, env, "OTHER=value")
+	require.Contains(t, env, "PYTHONIOENCODING=utf-8")
+	require.Contains(t, env, "PYTHONUTF8=1")
+	require.NotContains(t, env, "PYTHONIOENCODING=gbk")
+	require.NotContains(t, env, "pythonutf8=0")
+	require.Equal(t, 1, countEnvKeys(env, "PYTHONIOENCODING"))
+	require.Equal(t, 1, countEnvKeys(env, "PYTHONUTF8"))
+}
+
+func TestRunChannelKeyPythonScriptUsesUtf8ForUnicodeOutput(t *testing.T) {
+	if _, err := exec.LookPath("python"); err != nil {
+		t.Skip("python executable is not available")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	output, isTrimmed, err := runChannelKeyPythonScript(ctx, "print('✅ 中文 sk-unicode-123')")
+
+	require.NoError(t, err, output)
+	require.False(t, isTrimmed)
+	require.Contains(t, output, "✅ 中文 sk-unicode-123")
+	require.Equal(t, []string{"sk-unicode-123"}, extractChannelKeyScriptKeys(output))
+}
+
+func countEnvKeys(env []string, key string) int {
+	count := 0
+	prefix := strings.ToUpper(key) + "="
+	for _, item := range env {
+		if strings.HasPrefix(strings.ToUpper(item), prefix) {
+			count++
+		}
+	}
+	return count
 }
 
 func TestBackfillChannelKeyScriptRejectsSingleKeyChannel(t *testing.T) {

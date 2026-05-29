@@ -253,8 +253,8 @@ export function ChannelKeyScriptDialog({
                   value={script}
                   onChange={(event) => setScript(event.target.value)}
                   placeholder={t('Paste Python script here')}
-                  rows={24}
-                  className='min-h-[24rem] resize-y font-mono text-xs'
+                  autoSize={false}
+                  className='h-[24rem] resize-none overflow-y-auto font-mono text-xs lg:h-[32rem]'
                   disabled={isLoading}
                 />
               </div>
@@ -266,8 +266,8 @@ export function ChannelKeyScriptDialog({
                     <Textarea
                       readOnly
                       value={output}
-                      rows={8}
-                      className='min-h-32 font-mono text-xs'
+                      autoSize={false}
+                      className='h-40 resize-none overflow-y-auto font-mono text-xs'
                       placeholder={t('Script output will appear here')}
                     />
                   </div>
@@ -276,8 +276,8 @@ export function ChannelKeyScriptDialog({
                     <Textarea
                       readOnly
                       value={extractedKeys.join('\n')}
-                      rows={8}
-                      className='min-h-32 font-mono text-xs'
+                      autoSize={false}
+                      className='h-40 resize-none overflow-y-auto font-mono text-xs'
                       placeholder={t('Extracted sk-* keys will appear here')}
                     />
                   </div>
@@ -312,8 +312,8 @@ export function ChannelKeyScriptDialog({
                   <Textarea
                     readOnly
                     value={mergedKey}
-                    rows={6}
-                    className='font-mono text-xs'
+                    autoSize={false}
+                    className='h-32 resize-none overflow-y-auto font-mono text-xs'
                     placeholder={t('Existing keys plus newly extracted keys')}
                   />
                 </div>
@@ -326,8 +326,8 @@ export function ChannelKeyScriptDialog({
                     id='channel-key-backfill'
                     value={backfillKey}
                     onChange={(event) => setBackfillKey(event.target.value)}
-                    rows={6}
-                    className='font-mono text-xs'
+                    autoSize={false}
+                    className='h-32 resize-none overflow-y-auto font-mono text-xs'
                     placeholder={t('Fill or edit keys before saving')}
                   />
                 </div>

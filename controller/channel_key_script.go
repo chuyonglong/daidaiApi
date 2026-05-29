@@ -157,6 +157,21 @@ func truncateChannelKeyScriptOutput(output string) (string, bool) {
 	return output[:channelKeyScriptOutputMax], true
 }
 
+func buildChannelKeyPythonEnv(baseEnv []string) []string {
+	env := make([]string, 0, len(baseEnv)+2)
+	for _, item := range baseEnv {
+		name, _, found := strings.Cut(item, "=")
+		if found {
+			upperName := strings.ToUpper(name)
+			if upperName == "PYTHONIOENCODING" || upperName == "PYTHONUTF8" {
+				continue
+			}
+		}
+		env = append(env, item)
+	}
+	return append(env, "PYTHONIOENCODING=utf-8", "PYTHONUTF8=1")
+}
+
 func runChannelKeyPythonScript(ctx context.Context, script string) (string, bool, error) {
 	if strings.TrimSpace(script) == "" {
 		return "", false, errors.New("script cannot be empty")
@@ -184,6 +199,7 @@ func runChannelKeyPythonScript(ctx context.Context, script string) (string, bool
 		python = "python"
 	}
 	cmd := exec.CommandContext(ctx, python, tmpName)
+	cmd.Env = buildChannelKeyPythonEnv(os.Environ())
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output

@@ -1004,8 +1004,9 @@ func DeleteChannelBatch(c *gin.Context) {
 
 type PatchChannel struct {
 	model.Channel
+	IsMultiKey   *bool   `json:"is_multi_key"`
 	MultiKeyMode *string `json:"multi_key_mode"`
-	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
+	KeyMode      *string `json:"key_mode"` // append or replace keys for multi-key channels
 }
 
 func UpdateChannel(c *gin.Context) {
@@ -1037,9 +1038,37 @@ func UpdateChannel(c *gin.Context) {
 	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
 
-	// If the request explicitly specifies a new MultiKeyMode, apply it on top of the original info.
-	if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
-		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
+	if channel.IsMultiKey != nil {
+		if *channel.IsMultiKey {
+			channel.ChannelInfo.IsMultiKey = true
+		} else {
+			channel.ChannelInfo = model.ChannelInfo{}
+		}
+	}
+
+	if channel.ChannelInfo.IsMultiKey {
+		switch {
+		case channel.MultiKeyMode == nil || *channel.MultiKeyMode == "":
+			if channel.ChannelInfo.MultiKeyMode == "" {
+				channel.ChannelInfo.MultiKeyMode = constant.MultiKeyModeRandom
+			}
+		case *channel.MultiKeyMode == string(constant.MultiKeyModeRandom):
+			channel.ChannelInfo.MultiKeyMode = constant.MultiKeyModeRandom
+		case *channel.MultiKeyMode == string(constant.MultiKeyModePolling):
+			channel.ChannelInfo.MultiKeyMode = constant.MultiKeyModePolling
+		default:
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "multi-key mode must be random or polling",
+			})
+			return
+		}
+	} else if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "multi-key mode is only available for multi-key channels",
+		})
+		return
 	}
 
 	// 处理多key模式下的密钥追加/覆盖逻辑
@@ -1126,6 +1155,13 @@ func UpdateChannel(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if channel.IsMultiKey != nil && !*channel.IsMultiKey {
+		channel.ChannelInfo = model.ChannelInfo{}
+		if err := channel.SaveChannelInfo(); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	if originChannel.Status == common.ChannelStatusEnabled && channel.Status != common.ChannelStatusEnabled {
 		service.ClearChannelAffinityCacheByChannelID(channel.Id)
