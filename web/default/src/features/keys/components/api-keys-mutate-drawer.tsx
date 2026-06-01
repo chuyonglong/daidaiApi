@@ -16,8 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState, type ReactNode } from 'react'
-import { useForm } from 'react-hook-form'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import {
+  useForm,
+  type SubmitErrorHandler,
+  type SubmitHandler,
+} from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -71,6 +75,7 @@ import {
   transformFormDataToPayload,
   transformApiKeyToFormDefaults,
 } from '../lib'
+import { submitApiKeyForm } from '../lib/api-key-submit'
 import { type ApiKey } from '../types'
 import {
   ApiKeyGroupCombobox,
@@ -167,7 +172,9 @@ export function ApiKeysMutateDrawer({
         }
       })
     } else if (open && !isUpdate) {
-      form.reset(getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto))
+      form.reset(
+        getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
+      )
     }
   }, [open, isUpdate, currentRow, form, defaultUseAutoGroup, backendHasAuto])
 
@@ -176,7 +183,10 @@ export function ApiKeysMutateDrawer({
     if (groups.length === 0) return
     const currentGroup = form.getValues('group')
     if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
-      const fallback = groups.find((g) => g.value === 'default')?.value ?? groups[0]?.value ?? ''
+      const fallback =
+        groups.find((g) => g.value === 'default')?.value ??
+        groups[0]?.value ??
+        ''
       form.setValue('group', fallback)
       if (currentGroup === 'auto') {
         form.setValue('cross_group_retry', false)
@@ -184,60 +194,80 @@ export function ApiKeysMutateDrawer({
     }
   }, [groups, form])
 
-  const onSubmit = async (data: ApiKeyFormValues) => {
-    setIsSubmitting(true)
-    try {
-      const basePayload = transformFormDataToPayload(data)
+  const onSubmit = useCallback<SubmitHandler<ApiKeyFormValues>>(
+    async (data) => {
+      setIsSubmitting(true)
+      try {
+        const basePayload = transformFormDataToPayload(data)
 
-      if (isUpdate && currentRow) {
-        const result = await updateApiKey({
-          ...basePayload,
-          id: currentRow.id,
-        })
-        if (result.success) {
-          toast.success(t(SUCCESS_MESSAGES.API_KEY_UPDATED))
-          onOpenChange(false)
-          triggerRefresh()
-        } else {
-          toast.error(result.message || t(ERROR_MESSAGES.UPDATE_FAILED))
-        }
-      } else {
-        // Create mode - handle batch creation
-        const count = data.tokenCount || 1
-        let successCount = 0
-
-        for (let i = 0; i < count; i++) {
-          const result = await createApiKey({
+        if (isUpdate && currentRow) {
+          const result = await updateApiKey({
             ...basePayload,
-            name:
-              i === 0 && data.name
-                ? data.name
-                : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
+            id: currentRow.id,
           })
           if (result.success) {
-            successCount++
+            toast.success(t(SUCCESS_MESSAGES.API_KEY_UPDATED))
+            onOpenChange(false)
+            triggerRefresh()
           } else {
-            toast.error(result.message || t(ERROR_MESSAGES.CREATE_FAILED))
-            break
+            toast.error(result.message || t(ERROR_MESSAGES.UPDATE_FAILED))
+          }
+        } else {
+          // Create mode - handle batch creation
+          const count = data.tokenCount || 1
+          let successCount = 0
+
+          for (let i = 0; i < count; i++) {
+            const result = await createApiKey({
+              ...basePayload,
+              name:
+                i === 0 && data.name
+                  ? data.name
+                  : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
+            })
+            if (result.success) {
+              successCount++
+            } else {
+              toast.error(result.message || t(ERROR_MESSAGES.CREATE_FAILED))
+              break
+            }
+          }
+
+          if (successCount > 0) {
+            toast.success(
+              t('Successfully created {{count}} API Key(s)', {
+                count: successCount,
+              })
+            )
+            onOpenChange(false)
+            triggerRefresh()
           }
         }
-
-        if (successCount > 0) {
-          toast.success(
-            t('Successfully created {{count}} API Key(s)', {
-              count: successCount,
-            })
-          )
-          onOpenChange(false)
-          triggerRefresh()
-        }
+      } catch (_error) {
+        toast.error(t(ERROR_MESSAGES.UNEXPECTED))
+      } finally {
+        setIsSubmitting(false)
       }
-    } catch (_error) {
-      toast.error(t(ERROR_MESSAGES.UNEXPECTED))
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
+    },
+    [currentRow, isUpdate, onOpenChange, t, triggerRefresh]
+  )
+
+  const onInvalidSubmit = useCallback<
+    SubmitErrorHandler<ApiKeyFormValues>
+  >(() => {
+    toast.error(
+      t(isUpdate ? ERROR_MESSAGES.UPDATE_FAILED : ERROR_MESSAGES.CREATE_FAILED)
+    )
+  }, [isUpdate, t])
+
+  const handleSaveClick = useCallback(async () => {
+    await submitApiKeyForm(
+      form.handleSubmit,
+      onSubmit,
+      onInvalidSubmit,
+      setIsSubmitting
+    )
+  }, [form.handleSubmit, onSubmit, onInvalidSubmit])
 
   const handleSetExpiry = (months: number, days: number, hours: number) => {
     if (months === 0 && days === 0 && hours === 0) {
@@ -291,7 +321,7 @@ export function ApiKeysMutateDrawer({
         <Form {...form}>
           <form
             id='api-key-form'
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit, onInvalidSubmit)}
             className='min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3 sm:space-y-4 sm:px-4 sm:py-4'
           >
             <ApiKeyFormSection
@@ -605,8 +635,8 @@ export function ApiKeysMutateDrawer({
             {t('Close')}
           </SheetClose>
           <Button
-            form='api-key-form'
-            type='submit'
+            type='button'
+            onClick={handleSaveClick}
             disabled={isSubmitting}
             className='w-full sm:w-auto'
           >

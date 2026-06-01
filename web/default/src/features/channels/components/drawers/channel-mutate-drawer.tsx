@@ -2225,10 +2225,17 @@ export function ChannelMutateDrawer({
                                 </Button>
                               </div>
                             </div>
-                            <Input
+                            <Textarea
                               readOnly
                               value={channelKey ?? ''}
                               placeholder={t('Hidden — verify to reveal')}
+                              rows={Math.min(
+                                Math.max(
+                                  (channelKey ?? '').split('\n').length,
+                                  3
+                                ),
+                                10
+                              )}
                               className='font-mono'
                             />
                           </div>

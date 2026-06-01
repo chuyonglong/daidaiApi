@@ -25,10 +25,21 @@ import { type ApiKeyFormData, type ApiKey } from '../types'
 // Form Schema
 // ============================================================================
 
+const optionalFiniteNumber = z
+  .number()
+  .min(0)
+  .optional()
+  .catch(undefined)
+
+const optionalValidDate = z
+  .date()
+  .optional()
+  .catch(undefined)
+
 export const apiKeyFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  remain_quota_dollars: z.number().min(0).optional(),
-  expired_time: z.date().optional(),
+  remain_quota_dollars: optionalFiniteNumber,
+  expired_time: optionalValidDate,
   unlimited_quota: z.boolean(),
   model_limits: z.array(z.string()),
   allow_ips: z.string().optional(),
