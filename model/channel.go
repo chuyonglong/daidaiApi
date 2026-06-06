@@ -65,7 +65,16 @@ type ChannelInfo struct {
 	MultiKeyDisabledReason map[int]string        `json:"multi_key_disabled_reason,omitempty"` // key禁用原因列表，key index -> reason
 	MultiKeyDisabledTime   map[int]int64         `json:"multi_key_disabled_time,omitempty"`   // key禁用时间列表，key index -> time
 	MultiKeyPollingIndex   int                   `json:"multi_key_polling_index"`             // 多Key模式下轮询的key索引
+	MultiKeyErrorCode      map[int]string        `json:"multi_key_error_code,omitempty"`
+	MultiKeyErrorStatus    map[int]int           `json:"multi_key_error_status,omitempty"`
+	MultiKeyErrorReason    map[int]string        `json:"multi_key_error_reason,omitempty"`
 	MultiKeyMode           constant.MultiKeyMode `json:"multi_key_mode"`
+}
+
+type MultiKeyErrorSummary struct {
+	Status int
+	Code   string
+	Reason string
 }
 
 type ChannelSortOptions struct {
@@ -179,8 +188,130 @@ func (channel *Channel) GetKeys() []string {
 		}
 	}
 	// Otherwise, fall back to splitting by newline
-	keys := strings.Split(strings.Trim(channel.Key, "\n"), "\n")
+	return SplitMultiKeyLines(channel.Key)
+}
+
+func SplitMultiKeyLines(keyText string) []string {
+	lines := strings.Split(strings.ReplaceAll(keyText, "\r\n", "\n"), "\n")
+	keys := make([]string, 0, len(lines))
+	for _, line := range lines {
+		key := NormalizeMultiKeyLine(line)
+		if key != "" {
+			keys = append(keys, key)
+		}
+	}
 	return keys
+}
+
+func NormalizeMultiKeyLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+	for _, sep := range []string{":", "："} {
+		if left, right, ok := strings.Cut(line, sep); ok {
+			left = strings.TrimSpace(left)
+			right = strings.TrimSpace(right)
+			if left != "" && right != "" && isAllDigits(left) {
+				return right
+			}
+		}
+	}
+	return line
+}
+
+func FormatMultiKeyLines(keys []string) string {
+	cleanKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		key = NormalizeMultiKeyLine(key)
+		if key != "" {
+			cleanKeys = append(cleanKeys, key)
+		}
+	}
+	lines := make([]string, 0, len(cleanKeys))
+	for i, key := range cleanKeys {
+		lines = append(lines, fmt.Sprintf("%d:%s", i+1, key))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (info *ChannelInfo) RemapMultiKeyState(oldKeys []string, newKeys []string) {
+	oldIndexByKey := make(map[string]int, len(oldKeys))
+	for i, key := range oldKeys {
+		key = NormalizeMultiKeyLine(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := oldIndexByKey[key]; !exists {
+			oldIndexByKey[key] = i
+		}
+	}
+
+	remapInt := func(src map[int]int) map[int]int {
+		if src == nil {
+			return nil
+		}
+		dst := make(map[int]int)
+		for newIdx, key := range newKeys {
+			if oldIdx, exists := oldIndexByKey[NormalizeMultiKeyLine(key)]; exists {
+				if value, ok := src[oldIdx]; ok {
+					dst[newIdx] = value
+				}
+			}
+		}
+		return dst
+	}
+	remapInt64 := func(src map[int]int64) map[int]int64 {
+		if src == nil {
+			return nil
+		}
+		dst := make(map[int]int64)
+		for newIdx, key := range newKeys {
+			if oldIdx, exists := oldIndexByKey[NormalizeMultiKeyLine(key)]; exists {
+				if value, ok := src[oldIdx]; ok {
+					dst[newIdx] = value
+				}
+			}
+		}
+		return dst
+	}
+	remapString := func(src map[int]string) map[int]string {
+		if src == nil {
+			return nil
+		}
+		dst := make(map[int]string)
+		for newIdx, key := range newKeys {
+			if oldIdx, exists := oldIndexByKey[NormalizeMultiKeyLine(key)]; exists {
+				if value, ok := src[oldIdx]; ok {
+					dst[newIdx] = value
+				}
+			}
+		}
+		return dst
+	}
+
+	info.MultiKeyStatusList = remapInt(info.MultiKeyStatusList)
+	info.MultiKeyDisabledTime = remapInt64(info.MultiKeyDisabledTime)
+	info.MultiKeyDisabledReason = remapString(info.MultiKeyDisabledReason)
+	info.MultiKeyErrorStatus = remapInt(info.MultiKeyErrorStatus)
+	info.MultiKeyErrorCode = remapString(info.MultiKeyErrorCode)
+	info.MultiKeyErrorReason = remapString(info.MultiKeyErrorReason)
+	info.MultiKeySize = len(newKeys)
+	if info.MultiKeyPollingIndex >= len(newKeys) {
+		info.MultiKeyPollingIndex = 0
+	}
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
@@ -555,7 +686,7 @@ func (channel *Channel) Update() error {
 				}
 			}
 			if len(keys) == 0 { // fallback to newline split
-				keys = strings.Split(strings.Trim(keyStr, "\n"), "\n")
+				keys = SplitMultiKeyLines(keyStr)
 			}
 		}
 		channel.ChannelInfo.MultiKeySize = len(keys)
@@ -564,6 +695,41 @@ func (channel *Channel) Update() error {
 			for idx := range channel.ChannelInfo.MultiKeyStatusList {
 				if idx >= channel.ChannelInfo.MultiKeySize {
 					delete(channel.ChannelInfo.MultiKeyStatusList, idx)
+				}
+			}
+		}
+		if channel.ChannelInfo.MultiKeyDisabledReason != nil {
+			for idx := range channel.ChannelInfo.MultiKeyDisabledReason {
+				if idx >= channel.ChannelInfo.MultiKeySize {
+					delete(channel.ChannelInfo.MultiKeyDisabledReason, idx)
+				}
+			}
+		}
+		if channel.ChannelInfo.MultiKeyDisabledTime != nil {
+			for idx := range channel.ChannelInfo.MultiKeyDisabledTime {
+				if idx >= channel.ChannelInfo.MultiKeySize {
+					delete(channel.ChannelInfo.MultiKeyDisabledTime, idx)
+				}
+			}
+		}
+		if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+			for idx := range channel.ChannelInfo.MultiKeyErrorStatus {
+				if idx >= channel.ChannelInfo.MultiKeySize {
+					delete(channel.ChannelInfo.MultiKeyErrorStatus, idx)
+				}
+			}
+		}
+		if channel.ChannelInfo.MultiKeyErrorCode != nil {
+			for idx := range channel.ChannelInfo.MultiKeyErrorCode {
+				if idx >= channel.ChannelInfo.MultiKeySize {
+					delete(channel.ChannelInfo.MultiKeyErrorCode, idx)
+				}
+			}
+		}
+		if channel.ChannelInfo.MultiKeyErrorReason != nil {
+			for idx := range channel.ChannelInfo.MultiKeyErrorReason {
+				if idx >= channel.ChannelInfo.MultiKeySize {
+					delete(channel.ChannelInfo.MultiKeyErrorReason, idx)
 				}
 			}
 		}
@@ -644,23 +810,41 @@ func CleanupChannelPollingLocks() {
 	})
 }
 
-func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string) {
+func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string, summary *MultiKeyErrorSummary) {
 	keys := channel.GetKeys()
 	if len(keys) == 0 {
 		channel.Status = status
 	} else {
-		var keyIndex int
+		keyIndex := -1
 		for i, key := range keys {
 			if key == usingKey {
 				keyIndex = i
 				break
 			}
 		}
+		if keyIndex < 0 {
+			return
+		}
 		if channel.ChannelInfo.MultiKeyStatusList == nil {
 			channel.ChannelInfo.MultiKeyStatusList = make(map[int]int)
 		}
 		if status == common.ChannelStatusEnabled {
 			delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
+			if channel.ChannelInfo.MultiKeyDisabledReason != nil {
+				delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyDisabledTime != nil {
+				delete(channel.ChannelInfo.MultiKeyDisabledTime, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+				delete(channel.ChannelInfo.MultiKeyErrorStatus, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyErrorCode != nil {
+				delete(channel.ChannelInfo.MultiKeyErrorCode, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyErrorReason != nil {
+				delete(channel.ChannelInfo.MultiKeyErrorReason, keyIndex)
+			}
 		} else {
 			channel.ChannelInfo.MultiKeyStatusList[keyIndex] = status
 			if channel.ChannelInfo.MultiKeyDisabledReason == nil {
@@ -671,6 +855,20 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 			}
 			channel.ChannelInfo.MultiKeyDisabledReason[keyIndex] = reason
 			channel.ChannelInfo.MultiKeyDisabledTime[keyIndex] = common.GetTimestamp()
+			if summary != nil {
+				if channel.ChannelInfo.MultiKeyErrorStatus == nil {
+					channel.ChannelInfo.MultiKeyErrorStatus = make(map[int]int)
+				}
+				if channel.ChannelInfo.MultiKeyErrorCode == nil {
+					channel.ChannelInfo.MultiKeyErrorCode = make(map[int]string)
+				}
+				if channel.ChannelInfo.MultiKeyErrorReason == nil {
+					channel.ChannelInfo.MultiKeyErrorReason = make(map[int]string)
+				}
+				channel.ChannelInfo.MultiKeyErrorStatus[keyIndex] = summary.Status
+				channel.ChannelInfo.MultiKeyErrorCode[keyIndex] = summary.Code
+				channel.ChannelInfo.MultiKeyErrorReason[keyIndex] = summary.Reason
+			}
 		}
 		if len(channel.ChannelInfo.MultiKeyStatusList) >= channel.ChannelInfo.MultiKeySize {
 			channel.Status = common.ChannelStatusAutoDisabled
@@ -683,6 +881,10 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 }
 
 func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
+	return UpdateChannelStatusWithErrorSummary(channelId, usingKey, status, reason, nil)
+}
+
+func UpdateChannelStatusWithErrorSummary(channelId int, usingKey string, status int, reason string, summary *MultiKeyErrorSummary) bool {
 	if common.MemoryCacheEnabled {
 		channelStatusLock.Lock()
 		defer channelStatusLock.Unlock()
@@ -696,7 +898,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			pollingLock := GetChannelPollingLock(channelId)
 			pollingLock.Lock()
 			// 如果是多Key模式，更新缓存中的状态
-			handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
+			handlerMultiKeyUpdate(channelCache, usingKey, status, reason, summary)
 			pollingLock.Unlock()
 			//CacheUpdateChannel(channelCache)
 			//return true
@@ -731,7 +933,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			// Protect map writes with the same per-channel lock used by readers
 			pollingLock := GetChannelPollingLock(channelId)
 			pollingLock.Lock()
-			handlerMultiKeyUpdate(channel, usingKey, status, reason)
+			handlerMultiKeyUpdate(channel, usingKey, status, reason, summary)
 			pollingLock.Unlock()
 			if beforeStatus != channel.Status {
 				shouldUpdateAbilities = true

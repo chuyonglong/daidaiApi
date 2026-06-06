@@ -217,10 +217,24 @@ export interface BatchCreateChannelsResponse {
 
 export interface KeyStatus {
   index: number
+  key_no?: number
   status: number // 1: enabled, 2: manual disabled, 3: auto disabled
   disabled_time?: number
   reason?: string
+  error_status?: number
+  error_code?: string
+  error_reason?: string
   key_preview?: string
+}
+
+export interface InvalidMultiKeySummary {
+  index: number
+  key_no: number
+  status: number
+  error_status?: number
+  error_code?: string
+  error_reason?: string
+  reason?: string
 }
 
 export type MultiKeyConfirmAction = {

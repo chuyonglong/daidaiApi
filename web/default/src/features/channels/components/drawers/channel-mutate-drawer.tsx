@@ -151,7 +151,7 @@ import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
-import type { Channel } from '../../types'
+import type { Channel, InvalidMultiKeySummary } from '../../types'
 import { useChannels } from '../channels-provider'
 import { CodexOAuthDialog } from '../dialogs/codex-oauth-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
@@ -471,6 +471,7 @@ export function ChannelMutateDrawer({
   const [isFetchingModels, setIsFetchingModels] = useState(false)
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
   const [channelKey, setChannelKey] = useState<string | null>(null)
+  const [invalidKeys, setInvalidKeys] = useState<InvalidMultiKeySummary[]>([])
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
   const [codexOAuthDialogOpen, setCodexOAuthDialogOpen] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
@@ -549,9 +550,11 @@ export function ChannelMutateDrawer({
   useEffect(() => {
     if (!open) {
       setChannelKey(null)
+      setInvalidKeys([])
       setIsChannelKeyLoading(false)
     } else if (channelId) {
       setChannelKey(null)
+      setInvalidKeys([])
     }
   }, [open, channelId])
 
@@ -597,6 +600,20 @@ export function ChannelMutateDrawer({
   const isMultiKeyMode = multiKeyMode === 'multi_to_single'
   const isBatchMode =
     multiKeyMode === 'batch' || multiKeyMode === 'multi_to_single'
+  const invalidKeyText = useMemo(() => {
+    if (invalidKeys.length === 0) return ''
+    return invalidKeys
+      .map((item) => {
+        const parts = [
+          `#${item.key_no}`,
+          item.error_status ? String(item.error_status) : '',
+          item.error_code ?? '',
+          item.error_reason || item.reason || '',
+        ].filter(Boolean)
+        return parts.join(' ')
+      })
+      .join('\n')
+  }, [invalidKeys])
   const addModeOptions = isEditing
     ? ADD_MODE_OPTIONS.filter((option) => option.value !== 'batch')
     : ADD_MODE_OPTIONS
@@ -923,6 +940,7 @@ export function ChannelMutateDrawer({
 
       const keyValue = res.data?.key ?? ''
       setChannelKey(keyValue)
+      setInvalidKeys(res.data?.invalid_keys ?? [])
       toast.success(t('Channel key unlocked'))
       return res
     } finally {
@@ -2238,6 +2256,35 @@ export function ChannelMutateDrawer({
                               )}
                               className='font-mono'
                             />
+                            {isMultiKeyMode && (
+                              <div className='space-y-2'>
+                                <div>
+                                  <p className='text-sm font-medium'>
+                                    {t('Invalid keys')}
+                                  </p>
+                                  <p className='text-muted-foreground text-xs'>
+                                    {t(
+                                      'Keys disabled by upstream key errors.'
+                                    )}
+                                  </p>
+                                </div>
+                                <Textarea
+                                  readOnly
+                                  value={invalidKeyText}
+                                  placeholder={t('No invalid keys')}
+                                  rows={Math.min(
+                                    Math.max(
+                                      invalidKeyText
+                                        ? invalidKeyText.split('\n').length
+                                        : 1,
+                                      2
+                                    ),
+                                    8
+                                  )}
+                                  className='font-mono text-xs'
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                         <FormMessage />

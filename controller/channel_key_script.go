@@ -65,15 +65,7 @@ func extractChannelKeyScriptKeys(output string) []string {
 }
 
 func splitNonEmptyKeyLines(keyText string) []string {
-	lines := strings.Split(strings.ReplaceAll(keyText, "\r\n", "\n"), "\n")
-	keys := make([]string, 0, len(lines))
-	for _, line := range lines {
-		key := strings.TrimSpace(line)
-		if key != "" {
-			keys = append(keys, key)
-		}
-	}
-	return keys
+	return model.SplitMultiKeyLines(keyText)
 }
 
 func mergeChannelKeyScriptKeys(existing string, newKeys []string) string {
@@ -97,7 +89,7 @@ func mergeChannelKeyScriptKeys(existing string, newKeys []string) string {
 		seen[key] = struct{}{}
 		merged = append(merged, key)
 	}
-	return strings.Join(merged, "\n")
+	return model.FormatMultiKeyLines(merged)
 }
 
 func backfillChannelKeyScriptKeys(channelId int, keyText string) (*model.Channel, error) {
@@ -112,33 +104,13 @@ func backfillChannelKeyScriptKeys(channelId int, keyText string) (*model.Channel
 		return nil, errors.New("backfill save is only supported for multi-key channels")
 	}
 
+	oldKeys := channel.GetKeys()
 	keys := splitNonEmptyKeyLines(keyText)
 	if len(keys) == 0 {
 		return nil, errors.New("key cannot be empty")
 	}
-	channel.Key = strings.Join(keys, "\n")
-	channel.ChannelInfo.MultiKeySize = len(keys)
-	if channel.ChannelInfo.MultiKeyStatusList != nil {
-		for idx := range channel.ChannelInfo.MultiKeyStatusList {
-			if idx >= len(keys) {
-				delete(channel.ChannelInfo.MultiKeyStatusList, idx)
-			}
-		}
-	}
-	if channel.ChannelInfo.MultiKeyDisabledReason != nil {
-		for idx := range channel.ChannelInfo.MultiKeyDisabledReason {
-			if idx >= len(keys) {
-				delete(channel.ChannelInfo.MultiKeyDisabledReason, idx)
-			}
-		}
-	}
-	if channel.ChannelInfo.MultiKeyDisabledTime != nil {
-		for idx := range channel.ChannelInfo.MultiKeyDisabledTime {
-			if idx >= len(keys) {
-				delete(channel.ChannelInfo.MultiKeyDisabledTime, idx)
-			}
-		}
-	}
+	channel.Key = model.FormatMultiKeyLines(keys)
+	channel.ChannelInfo.RemapMultiKeyState(oldKeys, keys)
 	if channel.ChannelInfo.MultiKeyPollingIndex >= len(keys) {
 		channel.ChannelInfo.MultiKeyPollingIndex = 0
 	}

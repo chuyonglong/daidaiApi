@@ -25,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { FadeIn } from '@/components/page-transition'
+import { AdminUserFilterSelect } from './components/models/admin-user-filter-select'
 import { ModelsChartPreferences } from './components/models/models-chart-preferences'
 import { ModelsFilter } from './components/models/models-filter-dialog'
 import { OverviewDashboard } from './components/overview/overview-dashboard'
@@ -172,6 +173,13 @@ export function Dashboard() {
     setModelFilters(buildDefaultDashboardFilters(chartPreferences))
   }, [chartPreferences])
 
+  const handleApplyModelUserFilter = useCallback((username: string) => {
+    setModelFilters((prev) => ({
+      ...prev,
+      username,
+    }))
+  }, [])
+
   const handleDataUpdate = useCallback(
     (data: QuotaDataItem[], loading: boolean) => {
       setModelData(data)
@@ -212,6 +220,12 @@ export function Dashboard() {
   const modelActions =
     activeSection === 'models' ? (
       <>
+        {isAdmin && (
+          <AdminUserFilterSelect
+            value={modelFilters.username || ''}
+            onApply={handleApplyModelUserFilter}
+          />
+        )}
         <ModelsChartPreferences
           preferences={chartPreferences}
           onPreferencesChange={handleChartPreferencesChange}

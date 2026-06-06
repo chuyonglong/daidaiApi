@@ -35,7 +35,7 @@ func TestExtractChannelKeyScriptKeysFindsSkKeysAndDeduplicates(t *testing.T) {
 func TestMergeChannelKeyScriptKeysAppendsOnlyNewKeys(t *testing.T) {
 	merged := mergeChannelKeyScriptKeys("sk-old\n sk-same \n", []string{"sk-new", "sk-same", "sk-newer"})
 
-	require.Equal(t, "sk-old\nsk-same\nsk-new\nsk-newer", merged)
+	require.Equal(t, "1:sk-old\n2:sk-same\n3:sk-new\n4:sk-newer", merged)
 }
 
 func TestBuildChannelKeyPythonEnvForcesUtf8AndReplacesExistingValues(t *testing.T) {
@@ -128,16 +128,16 @@ func TestBackfillChannelKeyScriptUpdatesMultiKeyChannel(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "sk-old\nsk-new\nsk-disabled", result.Key)
+	require.Equal(t, "1:sk-old\n2:sk-new\n3:sk-disabled", result.Key)
 	require.Equal(t, 3, result.ChannelInfo.MultiKeySize)
 	require.Equal(t, constant.MultiKeyModePolling, result.ChannelInfo.MultiKeyMode)
-	require.Equal(t, map[int]int{1: common.ChannelStatusAutoDisabled}, result.ChannelInfo.MultiKeyStatusList)
-	require.Equal(t, map[int]string{1: "bad"}, result.ChannelInfo.MultiKeyDisabledReason)
-	require.Equal(t, map[int]int64{1: 100}, result.ChannelInfo.MultiKeyDisabledTime)
+	require.Equal(t, map[int]int{2: common.ChannelStatusAutoDisabled}, result.ChannelInfo.MultiKeyStatusList)
+	require.Equal(t, map[int]string{2: "bad"}, result.ChannelInfo.MultiKeyDisabledReason)
+	require.Equal(t, map[int]int64{2: 100}, result.ChannelInfo.MultiKeyDisabledTime)
 
 	var stored model.Channel
 	require.NoError(t, db.First(&stored, channel.Id).Error)
-	require.Equal(t, "sk-old\nsk-new\nsk-disabled", stored.Key)
+	require.Equal(t, "1:sk-old\n2:sk-new\n3:sk-disabled", stored.Key)
 	require.Equal(t, 3, stored.ChannelInfo.MultiKeySize)
 }
 
@@ -175,8 +175,59 @@ func TestExecuteChannelKeyScriptReturnsMergedKeys(t *testing.T) {
 	var data channelKeyScriptExecuteResponse
 	require.NoError(t, common.Unmarshal(response.Data, &data))
 	require.Equal(t, []string{"sk-new-123", "sk-old"}, data.Keys)
-	require.Equal(t, "sk-old\nsk-new-123", data.MergedKey)
+	require.Equal(t, "1:sk-old\n2:sk-new-123", data.MergedKey)
 	require.True(t, data.IsMultiKey)
+}
+
+func TestManageMultiKeysReturnsInvalidKeyErrorSummary(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "multi",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-bad\n2:sk-good",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:             true,
+			MultiKeySize:           2,
+			MultiKeyMode:           constant.MultiKeyModeRandom,
+			MultiKeyStatusList:     map[int]int{0: common.ChannelStatusAutoDisabled},
+			MultiKeyDisabledReason: map[int]string{0: "status_code=401, invalid api key"},
+			MultiKeyDisabledTime:   map[int]int64{0: 100},
+			MultiKeyErrorStatus:    map[int]int{0: http.StatusUnauthorized},
+			MultiKeyErrorCode:      map[int]string{0: "invalid_api_key"},
+			MultiKeyErrorReason:    map[int]string{0: "认证失败"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "get_key_status",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Keys []struct {
+				Index       int    `json:"index"`
+				KeyNo       int    `json:"key_no"`
+				ErrorStatus int    `json:"error_status"`
+				ErrorCode   string `json:"error_code"`
+				ErrorReason string `json:"error_reason"`
+			} `json:"keys"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data.Keys, 2)
+	require.Equal(t, 0, response.Data.Keys[0].Index)
+	require.Equal(t, 1, response.Data.Keys[0].KeyNo)
+	require.Equal(t, http.StatusUnauthorized, response.Data.Keys[0].ErrorStatus)
+	require.Equal(t, "invalid_api_key", response.Data.Keys[0].ErrorCode)
+	require.Equal(t, "认证失败", response.Data.Keys[0].ErrorReason)
 }
 
 func TestSaveChannelKeyScriptRejectsMissingChannel(t *testing.T) {

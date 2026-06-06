@@ -357,12 +357,18 @@ export function MultiKeyManageDialog({
                   {t('No keys found')}
                 </div>
               ) : (
-                <div className='min-w-[800px]'>
+                <div className='min-w-[1000px]'>
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead className='w-20'>{t('Index')}</TableHead>
                         <TableHead className='w-32'>{t('Status')}</TableHead>
+                        <TableHead className='min-w-[160px]'>
+                          {t('Error Code')}
+                        </TableHead>
+                        <TableHead className='min-w-[120px]'>
+                          {t('Error Reason')}
+                        </TableHead>
                         <TableHead className='min-w-[200px]'>
                           {t('Disabled Reason')}
                         </TableHead>
@@ -381,6 +387,12 @@ export function MultiKeyManageDialog({
                             #{key.index + 1}
                           </TableCell>
                           <TableCell>{renderStatusBadge(key.status)}</TableCell>
+                          <TableCell className='max-w-[12rem] truncate font-mono text-xs'>
+                            {key.error_code || '-'}
+                          </TableCell>
+                          <TableCell className='max-w-[8rem] truncate text-sm'>
+                            {key.error_reason || '-'}
+                          </TableCell>
                           <TableCell className='max-w-xs truncate text-sm'>
                             {key.reason || '-'}
                           </TableCell>

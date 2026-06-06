@@ -36,6 +36,7 @@ import type {
   GetChannelResponse,
   GetChannelsParams,
   GetChannelsResponse,
+  InvalidMultiKeySummary,
   MultiKeyManageParams,
   MultiKeyStatusResponse,
   SearchChannelsParams,
@@ -260,7 +261,11 @@ export async function deleteDisabledChannels(): Promise<{
 export async function getChannelKey(
   id: number,
   code?: string
-): Promise<{ success: boolean; message?: string; data?: { key: string } }> {
+): Promise<{
+  success: boolean
+  message?: string
+  data?: { key: string; invalid_keys?: InvalidMultiKeySummary[] }
+}> {
   const payload = code ? { code } : undefined
   const res = await api.post(`/api/channel/${id}/key`, payload)
   return res.data

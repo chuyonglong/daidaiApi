@@ -408,9 +408,48 @@ func GetChannelKey(c *gin.Context) {
 		"success": true,
 		"message": "获取成功",
 		"data": map[string]interface{}{
-			"key": channel.Key,
+			"key":          channel.Key,
+			"invalid_keys": buildInvalidMultiKeySummaries(channel),
 		},
 	})
+}
+
+func buildInvalidMultiKeySummaries(channel *model.Channel) []InvalidMultiKeySummary {
+	if channel == nil || !channel.ChannelInfo.IsMultiKey {
+		return nil
+	}
+	keys := channel.GetKeys()
+	items := make([]InvalidMultiKeySummary, 0)
+	for i := range keys {
+		status := common.ChannelStatusEnabled
+		if channel.ChannelInfo.MultiKeyStatusList != nil {
+			if s, exists := channel.ChannelInfo.MultiKeyStatusList[i]; exists {
+				status = s
+			}
+		}
+		if status == common.ChannelStatusEnabled {
+			continue
+		}
+		item := InvalidMultiKeySummary{
+			Index:  i,
+			KeyNo:  i + 1,
+			Status: status,
+		}
+		if channel.ChannelInfo.MultiKeyDisabledReason != nil {
+			item.Reason = channel.ChannelInfo.MultiKeyDisabledReason[i]
+		}
+		if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+			item.ErrorStatus = channel.ChannelInfo.MultiKeyErrorStatus[i]
+		}
+		if channel.ChannelInfo.MultiKeyErrorCode != nil {
+			item.ErrorCode = channel.ChannelInfo.MultiKeyErrorCode[i]
+		}
+		if channel.ChannelInfo.MultiKeyErrorReason != nil {
+			item.ErrorReason = channel.ChannelInfo.MultiKeyErrorReason[i]
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 // validateTwoFactorAuth 统一的2FA验证函数
@@ -532,6 +571,16 @@ type AddChannelRequest struct {
 type BatchCreateChannelsResponse struct {
 	CreatedCount int   `json:"created_count"`
 	Ids          []int `json:"ids"`
+}
+
+type InvalidMultiKeySummary struct {
+	Index       int    `json:"index"`
+	KeyNo       int    `json:"key_no"`
+	Status      int    `json:"status"`
+	ErrorStatus int    `json:"error_status,omitempty"`
+	ErrorCode   string `json:"error_code,omitempty"`
+	ErrorReason string `json:"error_reason,omitempty"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 const batchCreateChannelsLimit = 200
@@ -761,11 +810,11 @@ func AddChannel(c *gin.Context) {
 				if key == "" {
 					continue
 				}
-				key = strings.TrimSpace(key)
+				key = model.NormalizeMultiKeyLine(key)
 				cleanKeys = append(cleanKeys, key)
 			}
 			addChannelRequest.Channel.ChannelInfo.MultiKeySize = len(cleanKeys)
-			addChannelRequest.Channel.Key = strings.Join(cleanKeys, "\n")
+			addChannelRequest.Channel.Key = model.FormatMultiKeyLines(cleanKeys)
 		}
 		keys = []string{addChannelRequest.Channel.Key}
 	case "batch":
@@ -1092,7 +1141,7 @@ func UpdateChannel(c *gin.Context) {
 					}
 				} else {
 					// 换行分隔格式
-					existingKeys = strings.Split(strings.Trim(originChannel.Key, "\n"), "\n")
+					existingKeys = originChannel.GetKeys()
 				}
 
 				// 处理 Vertex AI 的特殊情况
@@ -1116,7 +1165,7 @@ func UpdateChannel(c *gin.Context) {
 					// 普通渠道的处理
 					inputKeys := strings.Split(channel.Key, "\n")
 					for _, key := range inputKeys {
-						key = strings.TrimSpace(key)
+						key = model.NormalizeMultiKeyLine(key)
 						if key != "" {
 							newKeys = append(newKeys, key)
 						}
@@ -1145,11 +1194,17 @@ func UpdateChannel(c *gin.Context) {
 				}
 
 				allKeys := append(existingKeys, dedupedNewKeys...)
-				channel.Key = strings.Join(allKeys, "\n")
+				channel.Key = model.FormatMultiKeyLines(allKeys)
 			}
 		case "replace":
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
+	}
+	if channel.ChannelInfo.IsMultiKey && strings.TrimSpace(channel.Key) != "" {
+		oldKeys := originChannel.GetKeys()
+		newKeys := channel.GetKeys()
+		channel.Key = model.FormatMultiKeyLines(newKeys)
+		channel.ChannelInfo.RemapMultiKeyState(oldKeys, newKeys)
 	}
 	err = channel.Update()
 	if err != nil {
@@ -1448,9 +1503,13 @@ type MultiKeyStatusResponse struct {
 
 type KeyStatus struct {
 	Index        int    `json:"index"`
+	KeyNo        int    `json:"key_no"`
 	Status       int    `json:"status"` // 1: enabled, 2: disabled
 	DisabledTime int64  `json:"disabled_time,omitempty"`
 	Reason       string `json:"reason,omitempty"`
+	ErrorStatus  int    `json:"error_status,omitempty"`
+	ErrorCode    string `json:"error_code,omitempty"`
+	ErrorReason  string `json:"error_reason,omitempty"`
 	KeyPreview   string `json:"key_preview"` // first 10 chars of key for identification
 }
 
@@ -1532,6 +1591,18 @@ func ManageMultiKeys(c *gin.Context) {
 					reason = channel.ChannelInfo.MultiKeyDisabledReason[i]
 				}
 			}
+			errorStatus := 0
+			errorCode := ""
+			errorReason := ""
+			if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+				errorStatus = channel.ChannelInfo.MultiKeyErrorStatus[i]
+			}
+			if channel.ChannelInfo.MultiKeyErrorCode != nil {
+				errorCode = channel.ChannelInfo.MultiKeyErrorCode[i]
+			}
+			if channel.ChannelInfo.MultiKeyErrorReason != nil {
+				errorReason = channel.ChannelInfo.MultiKeyErrorReason[i]
+			}
 
 			// Create key preview (first 10 chars)
 			keyPreview := key
@@ -1541,9 +1612,13 @@ func ManageMultiKeys(c *gin.Context) {
 
 			allKeyStatusList = append(allKeyStatusList, KeyStatus{
 				Index:        i,
+				KeyNo:        i + 1,
 				Status:       status,
 				DisabledTime: disabledTime,
 				Reason:       reason,
+				ErrorStatus:  errorStatus,
+				ErrorCode:    errorCode,
+				ErrorReason:  errorReason,
 				KeyPreview:   keyPreview,
 			})
 		}
@@ -1670,6 +1745,15 @@ func ManageMultiKeys(c *gin.Context) {
 		if channel.ChannelInfo.MultiKeyDisabledReason != nil {
 			delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
 		}
+		if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+			delete(channel.ChannelInfo.MultiKeyErrorStatus, keyIndex)
+		}
+		if channel.ChannelInfo.MultiKeyErrorCode != nil {
+			delete(channel.ChannelInfo.MultiKeyErrorCode, keyIndex)
+		}
+		if channel.ChannelInfo.MultiKeyErrorReason != nil {
+			delete(channel.ChannelInfo.MultiKeyErrorReason, keyIndex)
+		}
 
 		err = channel.Update()
 		if err != nil {
@@ -1694,6 +1778,9 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyStatusList = make(map[int]int)
 		channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
 		channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
+		channel.ChannelInfo.MultiKeyErrorStatus = make(map[int]int)
+		channel.ChannelInfo.MultiKeyErrorCode = make(map[int]string)
+		channel.ChannelInfo.MultiKeyErrorReason = make(map[int]string)
 
 		err = channel.Update()
 		if err != nil {
@@ -1778,6 +1865,9 @@ func ManageMultiKeys(c *gin.Context) {
 		var newStatusList = make(map[int]int)
 		var newDisabledTime = make(map[int]int64)
 		var newDisabledReason = make(map[int]string)
+		var newErrorStatus = make(map[int]int)
+		var newErrorCode = make(map[int]string)
+		var newErrorReason = make(map[int]string)
 
 		newIndex := 0
 		for i, key := range keys {
@@ -1804,6 +1894,21 @@ func ManageMultiKeys(c *gin.Context) {
 					newDisabledReason[newIndex] = r
 				}
 			}
+			if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+				if s, exists := channel.ChannelInfo.MultiKeyErrorStatus[i]; exists {
+					newErrorStatus[newIndex] = s
+				}
+			}
+			if channel.ChannelInfo.MultiKeyErrorCode != nil {
+				if code, exists := channel.ChannelInfo.MultiKeyErrorCode[i]; exists {
+					newErrorCode[newIndex] = code
+				}
+			}
+			if channel.ChannelInfo.MultiKeyErrorReason != nil {
+				if reason, exists := channel.ChannelInfo.MultiKeyErrorReason[i]; exists {
+					newErrorReason[newIndex] = reason
+				}
+			}
 			newIndex++
 		}
 
@@ -1816,11 +1921,14 @@ func ManageMultiKeys(c *gin.Context) {
 		}
 
 		// Update channel with remaining keys
-		channel.Key = strings.Join(remainingKeys, "\n")
+		channel.Key = model.FormatMultiKeyLines(remainingKeys)
 		channel.ChannelInfo.MultiKeySize = len(remainingKeys)
 		channel.ChannelInfo.MultiKeyStatusList = newStatusList
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
+		channel.ChannelInfo.MultiKeyErrorStatus = newErrorStatus
+		channel.ChannelInfo.MultiKeyErrorCode = newErrorCode
+		channel.ChannelInfo.MultiKeyErrorReason = newErrorReason
 
 		err = channel.Update()
 		if err != nil {
@@ -1842,6 +1950,9 @@ func ManageMultiKeys(c *gin.Context) {
 		var newStatusList = make(map[int]int)
 		var newDisabledTime = make(map[int]int64)
 		var newDisabledReason = make(map[int]string)
+		var newErrorStatus = make(map[int]int)
+		var newErrorCode = make(map[int]string)
+		var newErrorReason = make(map[int]string)
 
 		newIndex := 0
 		for i, key := range keys {
@@ -1870,6 +1981,21 @@ func ManageMultiKeys(c *gin.Context) {
 							newDisabledReason[newIndex] = r
 						}
 					}
+					if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+						if s, exists := channel.ChannelInfo.MultiKeyErrorStatus[i]; exists {
+							newErrorStatus[newIndex] = s
+						}
+					}
+					if channel.ChannelInfo.MultiKeyErrorCode != nil {
+						if code, exists := channel.ChannelInfo.MultiKeyErrorCode[i]; exists {
+							newErrorCode[newIndex] = code
+						}
+					}
+					if channel.ChannelInfo.MultiKeyErrorReason != nil {
+						if reason, exists := channel.ChannelInfo.MultiKeyErrorReason[i]; exists {
+							newErrorReason[newIndex] = reason
+						}
+					}
 				}
 				newIndex++
 			}
@@ -1884,11 +2010,14 @@ func ManageMultiKeys(c *gin.Context) {
 		}
 
 		// Update channel with remaining keys
-		channel.Key = strings.Join(remainingKeys, "\n")
+		channel.Key = model.FormatMultiKeyLines(remainingKeys)
 		channel.ChannelInfo.MultiKeySize = len(remainingKeys)
 		channel.ChannelInfo.MultiKeyStatusList = newStatusList
 		channel.ChannelInfo.MultiKeyDisabledTime = newDisabledTime
 		channel.ChannelInfo.MultiKeyDisabledReason = newDisabledReason
+		channel.ChannelInfo.MultiKeyErrorStatus = newErrorStatus
+		channel.ChannelInfo.MultiKeyErrorCode = newErrorCode
+		channel.ChannelInfo.MultiKeyErrorReason = newErrorReason
 
 		err = channel.Update()
 		if err != nil {

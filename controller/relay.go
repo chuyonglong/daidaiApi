@@ -229,6 +229,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+		if lockedChannelID, exists := c.Get("retry_multi_key_channel_id"); exists {
+			if id, ok := lockedChannelID.(int); ok && id > 0 {
+				relayInfo.LockedChannel = id
+			}
+		}
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
@@ -302,6 +307,16 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			Name:    c.GetString("channel_name"),
 			AutoBan: &autoBanInt,
 		}, nil
+	}
+	if retryParam.GetRetry() > 0 {
+		if lockedChannelID, ok := info.LockedChannel.(int); ok && lockedChannelID > 0 {
+			if lockedChannel, err := model.CacheGetChannel(lockedChannelID); err == nil && lockedChannel != nil && lockedChannel.Status == common.ChannelStatusEnabled {
+				if newAPIError := middleware.SetupContextForSelectedChannel(c, lockedChannel, info.OriginModelName); newAPIError == nil {
+					return lockedChannel, nil
+				}
+			}
+			info.LockedChannel = nil
+		}
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
@@ -377,9 +392,16 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
-		gopool.Go(func() {
-			service.DisableChannel(channelError, err.ErrorWithStatusCode())
-		})
+		if channelError.IsMultiKey {
+			if _, ok := service.BuildMultiKeyErrorSummary(err); ok {
+				service.DisableChannelWithError(channelError, err)
+				c.Set("retry_multi_key_channel_id", channelError.ChannelId)
+			}
+		} else {
+			gopool.Go(func() {
+				service.DisableChannelWithError(channelError, err)
+			})
+		}
 	}
 
 	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
