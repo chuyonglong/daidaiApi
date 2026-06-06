@@ -38,6 +38,7 @@ import type {
   DashboardFilters,
   DashboardTimeRange,
   ModelAnalyticsChartTab,
+  UserDashboardTimeRange,
 } from '@/features/dashboard/types'
 
 function isTimeGranularity(value: unknown): value is TimeGranularity {
@@ -96,6 +97,19 @@ export function getDashboardTimeRange(
       end: new Date(fromDate),
     }
   }
+
+  return getRollingDateRange(Number(range), fromDate)
+}
+
+export function getDefaultUserDashboardTimeRange(): UserDashboardTimeRange {
+  return 'today'
+}
+
+export function getUserDashboardTimeRange(
+  range: UserDashboardTimeRange,
+  fromDate: Date = new Date()
+): { start: Date; end: Date } {
+  if (range === 'today') return getDashboardTimeRange('today', fromDate)
 
   return getRollingDateRange(Number(range), fromDate)
 }

@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { DashboardChartPreferences, DashboardFilters } from './types'
+import type {
+  DashboardChartPreferences,
+  DashboardFilters,
+  UserDashboardTimeRange,
+} from './types'
 
 export const TIME_GRANULARITY_STORAGE_KEY = 'data_export_default_time'
 export const DASHBOARD_CHART_PREFERENCES_STORAGE_KEY =
@@ -49,6 +53,16 @@ export const TIME_RANGE_PRESETS = [
   { label: '14 Days', days: 14, value: '14' },
   { label: '29 Days', days: 29, value: '29' },
 ] as const
+
+export const USER_DASHBOARD_TIME_RANGE_PRESETS = [
+  { label: 'Today', value: 'today' },
+  { label: '7 Days', value: '7' },
+  { label: '14 Days', value: '14' },
+  { label: '29 Days', value: '29' },
+] satisfies ReadonlyArray<{
+  label: string
+  value: UserDashboardTimeRange
+}>
 
 export const DASHBOARD_TIME_RANGE_PRESETS = [
   { label: 'Today', value: 'today' },

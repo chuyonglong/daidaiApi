@@ -22,10 +22,12 @@ export {
   getSavedGranularity,
   saveGranularity,
   getDefaultDays,
+  getDefaultUserDashboardTimeRange,
   getSavedChartPreferences,
   saveChartPreferences,
   buildDefaultDashboardFilters,
   getDashboardTimeRange,
+  getUserDashboardTimeRange,
 } from './filters'
 export {
   getLatencyColorClass,

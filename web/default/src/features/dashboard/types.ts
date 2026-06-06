@@ -66,6 +66,8 @@ export type ModelAnalyticsChartTab = 'trend' | 'proportion' | 'top'
 
 export type DashboardTimeRange = 'today' | 'thisMonth' | '1' | '7' | '14' | '29'
 
+export type UserDashboardTimeRange = 'today' | '7' | '14' | '29'
+
 export interface DashboardChartPreferences {
   consumptionDistributionChart: ConsumptionDistributionChartType
   modelAnalyticsChart: ModelAnalyticsChartTab
