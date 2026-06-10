@@ -64,9 +64,23 @@ export type ConsumptionDistributionChartType = 'bar' | 'area'
 
 export type ModelAnalyticsChartTab = 'trend' | 'proportion' | 'top'
 
-export type DashboardTimeRange = 'today' | 'thisMonth' | '1' | '7' | '14' | '29'
+export type DashboardTimeRange =
+  | 'today'
+  | 'yesterday'
+  | 'dayBeforeYesterday'
+  | 'thisMonth'
+  | '1'
+  | '7'
+  | '14'
+  | '29'
 
-export type UserDashboardTimeRange = 'today' | '7' | '14' | '29'
+export type UserDashboardTimeRange =
+  | 'today'
+  | 'yesterday'
+  | 'dayBeforeYesterday'
+  | '7'
+  | '14'
+  | '29'
 
 export interface DashboardChartPreferences {
   consumptionDistributionChart: ConsumptionDistributionChartType

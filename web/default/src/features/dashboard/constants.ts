@@ -56,6 +56,8 @@ export const TIME_RANGE_PRESETS = [
 
 export const USER_DASHBOARD_TIME_RANGE_PRESETS = [
   { label: 'Today', value: 'today' },
+  { label: 'Yesterday', value: 'yesterday' },
+  { label: 'Day Before Yesterday', value: 'dayBeforeYesterday' },
   { label: '7 Days', value: '7' },
   { label: '14 Days', value: '14' },
   { label: '29 Days', value: '29' },
@@ -66,6 +68,8 @@ export const USER_DASHBOARD_TIME_RANGE_PRESETS = [
 
 export const DASHBOARD_TIME_RANGE_PRESETS = [
   { label: 'Today', value: 'today' },
+  { label: 'Yesterday', value: 'yesterday' },
+  { label: 'Day Before Yesterday', value: 'dayBeforeYesterday' },
   { label: 'This Month', value: 'thisMonth' },
   ...TIME_RANGE_PRESETS,
 ] as const

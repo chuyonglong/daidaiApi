@@ -79,16 +79,30 @@ type SavedDashboardChartPreferences = Partial<DashboardChartPreferences> & {
   defaultTimeRangeDays?: unknown
 }
 
+function getNaturalDayRange(
+  daysBack: number,
+  fromDate: Date = new Date()
+): { start: Date; end: Date } {
+  const target = new Date(fromDate)
+  target.setDate(target.getDate() - daysBack)
+
+  return {
+    start: getStartOfDay(target),
+    end: getEndOfDay(target),
+  }
+}
+
 export function getDashboardTimeRange(
   range: DashboardTimeRange,
   fromDate: Date = new Date()
 ): { start: Date; end: Date } {
   if (range === 'today') {
-    return {
-      start: getStartOfDay(fromDate),
-      end: getEndOfDay(fromDate),
-    }
+    return getNaturalDayRange(0, fromDate)
   }
+
+  if (range === 'yesterday') return getNaturalDayRange(1, fromDate)
+
+  if (range === 'dayBeforeYesterday') return getNaturalDayRange(2, fromDate)
 
   if (range === 'thisMonth') {
     const start = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1)
@@ -109,7 +123,13 @@ export function getUserDashboardTimeRange(
   range: UserDashboardTimeRange,
   fromDate: Date = new Date()
 ): { start: Date; end: Date } {
-  if (range === 'today') return getDashboardTimeRange('today', fromDate)
+  if (
+    range === 'today' ||
+    range === 'yesterday' ||
+    range === 'dayBeforeYesterday'
+  ) {
+    return getDashboardTimeRange(range, fromDate)
+  }
 
   return getRollingDateRange(Number(range), fromDate)
 }
