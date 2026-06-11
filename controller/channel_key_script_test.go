@@ -230,6 +230,128 @@ func TestManageMultiKeysReturnsInvalidKeyErrorSummary(t *testing.T) {
 	require.Equal(t, "认证失败", response.Data.Keys[0].ErrorReason)
 }
 
+func TestManageMultiKeysEnablesOnlyCurrentChannelAutoDisabledKeys(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:      "target",
+		Type:      constant.ChannelTypeOpenAI,
+		Key:       "1:sk-enabled\n2:sk-auto-a\n3:sk-manual\n4:sk-auto-b",
+		Models:    "gpt-4o",
+		Status:    common.ChannelStatusAutoDisabled,
+		OtherInfo: `{"status_reason":"All keys are disabled","status_time":123}`,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:             true,
+			MultiKeySize:           4,
+			MultiKeyMode:           constant.MultiKeyModeRandom,
+			MultiKeyStatusList:     map[int]int{1: common.ChannelStatusAutoDisabled, 2: common.ChannelStatusManuallyDisabled, 3: common.ChannelStatusAutoDisabled},
+			MultiKeyDisabledReason: map[int]string{1: "quota exhausted", 2: "manual", 3: "quota exhausted"},
+			MultiKeyDisabledTime:   map[int]int64{1: 100, 2: 200, 3: 300},
+			MultiKeyErrorStatus:    map[int]int{1: http.StatusForbidden, 3: http.StatusTooManyRequests},
+			MultiKeyErrorCode:      map[int]string{1: "insufficient_quota", 3: "rate_limit"},
+			MultiKeyErrorReason:    map[int]string{1: "quota", 3: "rate limit"},
+		},
+	}
+	otherChannel := model.Channel{
+		Name:   "other",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-other-auto",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:             true,
+			MultiKeySize:           1,
+			MultiKeyMode:           constant.MultiKeyModeRandom,
+			MultiKeyStatusList:     map[int]int{0: common.ChannelStatusAutoDisabled},
+			MultiKeyDisabledReason: map[int]string{0: "other quota"},
+			MultiKeyDisabledTime:   map[int]int64{0: 400},
+			MultiKeyErrorStatus:    map[int]int{0: http.StatusForbidden},
+			MultiKeyErrorCode:      map[int]string{0: "insufficient_quota"},
+			MultiKeyErrorReason:    map[int]string{0: "quota"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+	require.NoError(t, db.Create(&otherChannel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "enable_auto_disabled_keys",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    int    `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, response.Message)
+	require.Equal(t, 2, response.Data)
+
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, common.ChannelStatusEnabled, stored.Status)
+	require.Equal(t, map[int]int{2: common.ChannelStatusManuallyDisabled}, stored.ChannelInfo.MultiKeyStatusList)
+	require.Equal(t, map[int]string{2: "manual"}, stored.ChannelInfo.MultiKeyDisabledReason)
+	require.Equal(t, map[int]int64{2: 200}, stored.ChannelInfo.MultiKeyDisabledTime)
+	require.Empty(t, stored.ChannelInfo.MultiKeyErrorStatus)
+	require.Empty(t, stored.ChannelInfo.MultiKeyErrorCode)
+	require.Empty(t, stored.ChannelInfo.MultiKeyErrorReason)
+	require.NotContains(t, stored.GetOtherInfo(), "status_reason")
+	require.NotContains(t, stored.GetOtherInfo(), "status_time")
+
+	var otherStored model.Channel
+	require.NoError(t, db.First(&otherStored, otherChannel.Id).Error)
+	require.Equal(t, map[int]int{0: common.ChannelStatusAutoDisabled}, otherStored.ChannelInfo.MultiKeyStatusList)
+	require.Equal(t, map[int]string{0: "other quota"}, otherStored.ChannelInfo.MultiKeyDisabledReason)
+	require.Equal(t, map[int]int64{0: 400}, otherStored.ChannelInfo.MultiKeyDisabledTime)
+	require.Equal(t, map[int]int{0: http.StatusForbidden}, otherStored.ChannelInfo.MultiKeyErrorStatus)
+	require.Equal(t, map[int]string{0: "insufficient_quota"}, otherStored.ChannelInfo.MultiKeyErrorCode)
+	require.Equal(t, map[int]string{0: "quota"}, otherStored.ChannelInfo.MultiKeyErrorReason)
+}
+
+func TestManageMultiKeysEnableAutoDisabledKeysNoopsWhenNoneExist(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "manual-only",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-enabled\n2:sk-manual",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:             true,
+			MultiKeySize:           2,
+			MultiKeyMode:           constant.MultiKeyModeRandom,
+			MultiKeyStatusList:     map[int]int{1: common.ChannelStatusManuallyDisabled},
+			MultiKeyDisabledReason: map[int]string{1: "manual"},
+			MultiKeyDisabledTime:   map[int]int64{1: 200},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "enable_auto_disabled_keys",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    int    `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.False(t, response.Success)
+	require.Equal(t, 0, response.Data)
+
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, map[int]int{1: common.ChannelStatusManuallyDisabled}, stored.ChannelInfo.MultiKeyStatusList)
+	require.Equal(t, map[int]string{1: "manual"}, stored.ChannelInfo.MultiKeyDisabledReason)
+	require.Equal(t, map[int]int64{1: 200}, stored.ChannelInfo.MultiKeyDisabledTime)
+}
+
 func TestSaveChannelKeyScriptRejectsMissingChannel(t *testing.T) {
 	setupChannelKeyScriptTestDB(t)
 

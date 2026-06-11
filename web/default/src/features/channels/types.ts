@@ -318,6 +318,7 @@ export interface MultiKeyManageParams {
     | 'get_key_status'
     | 'disable_key'
     | 'enable_key'
+    | 'enable_auto_disabled_keys'
     | 'enable_all_keys'
     | 'disable_all_keys'
     | 'delete_key'
