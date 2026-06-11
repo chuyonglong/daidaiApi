@@ -33,6 +33,7 @@ import {
   Loader2,
   Sparkles,
   Trash2,
+  RotateCcw,
   Copy,
   FileText,
   Eraser,
@@ -107,6 +108,7 @@ import {
 } from '@/features/auth/secure-verification'
 import {
   createChannel,
+  enableAutoDisabledMultiKeys,
   fetchModels,
   getAllModels,
   getChannel,
@@ -125,6 +127,7 @@ import {
   FIELD_DESCRIPTIONS,
   FIELD_PLACEHOLDERS,
   MODEL_FETCHABLE_TYPES,
+  MULTI_KEY_STATUS,
   SUCCESS_MESSAGES,
 } from '../../constants'
 import {
@@ -473,6 +476,8 @@ export function ChannelMutateDrawer({
   const [channelKey, setChannelKey] = useState<string | null>(null)
   const [invalidKeys, setInvalidKeys] = useState<InvalidMultiKeySummary[]>([])
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
+  const [isRestoringAutoDisabledKeys, setIsRestoringAutoDisabledKeys] =
+    useState(false)
   const [codexOAuthDialogOpen, setCodexOAuthDialogOpen] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
@@ -552,9 +557,11 @@ export function ChannelMutateDrawer({
       setChannelKey(null)
       setInvalidKeys([])
       setIsChannelKeyLoading(false)
+      setIsRestoringAutoDisabledKeys(false)
     } else if (channelId) {
       setChannelKey(null)
       setInvalidKeys([])
+      setIsRestoringAutoDisabledKeys(false)
     }
   }, [open, channelId])
 
@@ -614,6 +621,13 @@ export function ChannelMutateDrawer({
       })
       .join('\n')
   }, [invalidKeys])
+  const hasAutoDisabledKeys = useMemo(
+    () =>
+      invalidKeys.some(
+        (item) => item.status === MULTI_KEY_STATUS.AUTO_DISABLED
+      ),
+    [invalidKeys]
+  )
   const addModeOptions = isEditing
     ? ADD_MODE_OPTIONS.filter((option) => option.value !== 'batch')
     : ADD_MODE_OPTIONS
@@ -926,27 +940,32 @@ export function ChannelMutateDrawer({
     }
   }
 
-  const fetchChannelKey = useCallback(async () => {
-    if (!channelId) {
-      throw new Error('Channel is not selected')
-    }
-
-    setIsChannelKeyLoading(true)
-    try {
-      const res = await getChannelKey(channelId)
-      if (!res.success) {
-        throw new Error(res.message || 'Failed to fetch channel key')
+  const fetchChannelKey = useCallback(
+    async (options?: { showToast?: boolean }) => {
+      if (!channelId) {
+        throw new Error('Channel is not selected')
       }
 
-      const keyValue = res.data?.key ?? ''
-      setChannelKey(keyValue)
-      setInvalidKeys(res.data?.invalid_keys ?? [])
-      toast.success(t('Channel key unlocked'))
-      return res
-    } finally {
-      setIsChannelKeyLoading(false)
-    }
-  }, [channelId, t])
+      setIsChannelKeyLoading(true)
+      try {
+        const res = await getChannelKey(channelId)
+        if (!res.success) {
+          throw new Error(res.message || 'Failed to fetch channel key')
+        }
+
+        const keyValue = res.data?.key ?? ''
+        setChannelKey(keyValue)
+        setInvalidKeys(res.data?.invalid_keys ?? [])
+        if (options?.showToast !== false) {
+          toast.success(t('Channel key unlocked'))
+        }
+        return res
+      } finally {
+        setIsChannelKeyLoading(false)
+      }
+    },
+    [channelId, t]
+  )
 
   const handleRevealKey = useCallback(async () => {
     if (!channelId) return
@@ -964,6 +983,33 @@ export function ChannelMutateDrawer({
       }
     }
   }, [channelId, withVerification, fetchChannelKey])
+
+  const handleRestoreAutoDisabledKeys = useCallback(async () => {
+    if (!channelId) return
+
+    setIsRestoringAutoDisabledKeys(true)
+    try {
+      const res = await enableAutoDisabledMultiKeys(channelId)
+      if (!res.success) {
+        throw new Error(res.message || 'No auto-disabled keys to restore')
+      }
+
+      toast.success(res.message || t('Auto-disabled keys restored'))
+      await fetchChannelKey({ showToast: false })
+      queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      queryClient.invalidateQueries({
+        queryKey: channelsQueryKeys.detail(channelId),
+      })
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t('Failed to restore auto-disabled keys')
+      )
+    } finally {
+      setIsRestoringAutoDisabledKeys(false)
+    }
+  }, [channelId, fetchChannelKey, queryClient, t])
 
   const handleRefreshCodexCredential = useCallback(async () => {
     if (!channelId) return
@@ -2258,15 +2304,37 @@ export function ChannelMutateDrawer({
                             />
                             {isMultiKeyMode && (
                               <div className='space-y-2'>
-                                <div>
-                                  <p className='text-sm font-medium'>
-                                    {t('Invalid keys')}
-                                  </p>
-                                  <p className='text-muted-foreground text-xs'>
-                                    {t(
-                                      'Keys disabled by upstream key errors.'
-                                    )}
-                                  </p>
+                                <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+                                  <div>
+                                    <p className='text-sm font-medium'>
+                                      {t('Invalid keys')}
+                                    </p>
+                                    <p className='text-muted-foreground text-xs'>
+                                      {t(
+                                        'Keys disabled by upstream key errors.'
+                                      )}
+                                    </p>
+                                  </div>
+                                  {hasAutoDisabledKeys && (
+                                    <Button
+                                      type='button'
+                                      variant='outline'
+                                      size='sm'
+                                      onClick={handleRestoreAutoDisabledKeys}
+                                      disabled={
+                                        isRestoringAutoDisabledKeys ||
+                                        isChannelKeyLoading
+                                      }
+                                      className='shrink-0'
+                                    >
+                                      {isRestoringAutoDisabledKeys ? (
+                                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                      ) : (
+                                        <RotateCcw className='mr-2 h-4 w-4' />
+                                      )}
+                                      {t('Restore auto-disabled keys')}
+                                    </Button>
+                                  )}
                                 </div>
                                 <Textarea
                                   readOnly

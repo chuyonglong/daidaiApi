@@ -436,6 +436,18 @@ export async function enableAllMultiKeys(
 }
 
 /**
+ * Enable auto-disabled keys in multi-key channel
+ */
+export async function enableAutoDisabledMultiKeys(
+  channelId: number
+): Promise<{ success: boolean; message?: string; data?: number }> {
+  return manageMultiKeys({
+    channel_id: channelId,
+    action: 'enable_auto_disabled_keys',
+  }) as Promise<{ success: boolean; message?: string; data?: number }>
+}
+
+/**
  * Disable all keys in multi-key channel
  */
 export async function disableAllMultiKeys(

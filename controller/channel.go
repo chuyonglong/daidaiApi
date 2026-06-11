@@ -1481,7 +1481,7 @@ func CopyChannel(c *gin.Context) {
 // MultiKeyManageRequest represents the request for multi-key management operations
 type MultiKeyManageRequest struct {
 	ChannelId int    `json:"channel_id"`
-	Action    string `json:"action"`              // "disable_key", "enable_key", "delete_key", "delete_disabled_keys", "get_key_status"
+	Action    string `json:"action"`              // "disable_key", "enable_key", "enable_auto_disabled_keys", "delete_key", "delete_disabled_keys", "get_key_status"
 	KeyIndex  *int   `json:"key_index,omitempty"` // for disable_key, enable_key, and delete_key actions
 	Page      int    `json:"page,omitempty"`      // for get_key_status pagination
 	PageSize  int    `json:"page_size,omitempty"` // for get_key_status pagination
@@ -1765,6 +1765,63 @@ func ManageMultiKeys(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "密钥已启用",
+		})
+		return
+
+	case "enable_auto_disabled_keys":
+		var enabledCount int
+		for keyIndex, status := range channel.ChannelInfo.MultiKeyStatusList {
+			if status != common.ChannelStatusAutoDisabled {
+				continue
+			}
+
+			delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
+			if channel.ChannelInfo.MultiKeyDisabledTime != nil {
+				delete(channel.ChannelInfo.MultiKeyDisabledTime, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyDisabledReason != nil {
+				delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+				delete(channel.ChannelInfo.MultiKeyErrorStatus, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyErrorCode != nil {
+				delete(channel.ChannelInfo.MultiKeyErrorCode, keyIndex)
+			}
+			if channel.ChannelInfo.MultiKeyErrorReason != nil {
+				delete(channel.ChannelInfo.MultiKeyErrorReason, keyIndex)
+			}
+			enabledCount++
+		}
+
+		if enabledCount == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "没有需要恢复的自动禁用密钥",
+				"data":    0,
+			})
+			return
+		}
+
+		if channel.Status == common.ChannelStatusAutoDisabled {
+			channel.Status = common.ChannelStatusEnabled
+			info := channel.GetOtherInfo()
+			delete(info, "status_reason")
+			delete(info, "status_time")
+			channel.SetOtherInfo(info)
+		}
+
+		err = channel.Update()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+
+		model.InitChannelCache()
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": fmt.Sprintf("已恢复 %d 个自动禁用密钥", enabledCount),
+			"data":    enabledCount,
 		})
 		return
 
