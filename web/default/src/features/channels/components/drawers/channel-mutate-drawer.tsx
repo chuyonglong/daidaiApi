@@ -127,7 +127,6 @@ import {
   FIELD_DESCRIPTIONS,
   FIELD_PLACEHOLDERS,
   MODEL_FETCHABLE_TYPES,
-  MULTI_KEY_STATUS,
   SUCCESS_MESSAGES,
 } from '../../constants'
 import {
@@ -621,13 +620,7 @@ export function ChannelMutateDrawer({
       })
       .join('\n')
   }, [invalidKeys])
-  const hasAutoDisabledKeys = useMemo(
-    () =>
-      invalidKeys.some(
-        (item) => item.status === MULTI_KEY_STATUS.AUTO_DISABLED
-      ),
-    [invalidKeys]
-  )
+  const hasInvalidKeys = invalidKeys.length > 0
   const addModeOptions = isEditing
     ? ADD_MODE_OPTIONS.filter((option) => option.value !== 'batch')
     : ADD_MODE_OPTIONS
@@ -2315,7 +2308,7 @@ export function ChannelMutateDrawer({
                                       )}
                                     </p>
                                   </div>
-                                  {hasAutoDisabledKeys && (
+                                  {hasInvalidKeys && (
                                     <Button
                                       type='button'
                                       variant='outline'
