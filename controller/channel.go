@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -1480,12 +1481,18 @@ func CopyChannel(c *gin.Context) {
 
 // MultiKeyManageRequest represents the request for multi-key management operations
 type MultiKeyManageRequest struct {
-	ChannelId int    `json:"channel_id"`
-	Action    string `json:"action"`              // "disable_key", "enable_key", "enable_auto_disabled_keys", "delete_key", "delete_disabled_keys", "get_key_status"
-	KeyIndex  *int   `json:"key_index,omitempty"` // for disable_key, enable_key, and delete_key actions
-	Page      int    `json:"page,omitempty"`      // for get_key_status pagination
-	PageSize  int    `json:"page_size,omitempty"` // for get_key_status pagination
-	Status    *int   `json:"status,omitempty"`    // for get_key_status filtering: 1=enabled, 2=manual_disabled, 3=auto_disabled, nil=all
+	ChannelId      int    `json:"channel_id"`
+	Action         string `json:"action"`              // "disable_key", "enable_key", "enable_auto_disabled_keys", "delete_key", "delete_disabled_keys", "get_key_status"
+	KeyIndex       *int   `json:"key_index,omitempty"` // for per-key actions
+	Page           int    `json:"page,omitempty"`      // for get_key_status pagination
+	PageSize       int    `json:"page_size,omitempty"` // for get_key_status pagination
+	Status         *int   `json:"status,omitempty"`    // for get_key_status filtering: 1=enabled, 2=manual_disabled, 3=auto_disabled, nil=all
+	IncludeUsage   bool   `json:"include_usage,omitempty"`
+	StartTimestamp int64  `json:"start_timestamp,omitempty"`
+	EndTimestamp   int64  `json:"end_timestamp,omitempty"`
+	Model          string `json:"model,omitempty"`
+	EndpointType   string `json:"endpoint_type,omitempty"`
+	Stream         bool   `json:"stream,omitempty"`
 }
 
 // MultiKeyStatusResponse represents the response for key status query
@@ -1502,15 +1509,157 @@ type MultiKeyStatusResponse struct {
 }
 
 type KeyStatus struct {
-	Index        int    `json:"index"`
-	KeyNo        int    `json:"key_no"`
-	Status       int    `json:"status"` // 1: enabled, 2: disabled
-	DisabledTime int64  `json:"disabled_time,omitempty"`
-	Reason       string `json:"reason,omitempty"`
-	ErrorStatus  int    `json:"error_status,omitempty"`
-	ErrorCode    string `json:"error_code,omitempty"`
-	ErrorReason  string `json:"error_reason,omitempty"`
-	KeyPreview   string `json:"key_preview"` // first 10 chars of key for identification
+	Index            int    `json:"index"`
+	KeyNo            int    `json:"key_no"`
+	Status           int    `json:"status"` // 1: enabled, 2: manual disabled, 3: auto disabled
+	DisabledTime     int64  `json:"disabled_time,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	ErrorStatus      int    `json:"error_status,omitempty"`
+	ErrorCode        string `json:"error_code,omitempty"`
+	ErrorReason      string `json:"error_reason,omitempty"`
+	KeyPreview       string `json:"key_preview"` // first 10 chars of key for identification
+	UsedQuota        int    `json:"used_quota"`
+	RequestCount     int    `json:"request_count"`
+	PromptTokens     int    `json:"prompt_tokens"`
+	CompletionTokens int    `json:"completion_tokens"`
+}
+
+type multiKeyUsageStat struct {
+	UsedQuota        int
+	RequestCount     int
+	PromptTokens     int
+	CompletionTokens int
+}
+
+var multiKeyReasonErrorCodePattern = regexp.MustCompile(`(?i)\b(?:status_code|error_code|status)\s*[:=]\s*([1-9][0-9]{2})\b`)
+
+func deriveMultiKeyErrorCodeFromReason(values ...string) string {
+	for _, value := range values {
+		matches := multiKeyReasonErrorCodePattern.FindStringSubmatch(value)
+		if len(matches) == 2 {
+			return matches[1]
+		}
+	}
+	return ""
+}
+
+func numberFromAny(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case json.Number:
+		i, err := v.Int64()
+		if err == nil {
+			return int(i), true
+		}
+		f, err := v.Float64()
+		if err == nil {
+			return int(f), true
+		}
+	}
+	return 0, false
+}
+
+func multiKeyIndexFromLogOther(other string) (int, bool) {
+	if strings.TrimSpace(other) == "" {
+		return 0, false
+	}
+	var payload map[string]any
+	if err := common.Unmarshal([]byte(other), &payload); err != nil {
+		return 0, false
+	}
+	adminRaw, ok := payload["admin_info"]
+	if !ok {
+		return 0, false
+	}
+	adminInfo, ok := adminRaw.(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	isMultiKey, _ := adminInfo["is_multi_key"].(bool)
+	if !isMultiKey {
+		return 0, false
+	}
+	return numberFromAny(adminInfo["multi_key_index"])
+}
+
+func getMultiKeyUsageStats(channelID int, startTimestamp, endTimestamp int64) (map[int]multiKeyUsageStat, error) {
+	type logUsageRow struct {
+		Other            string `gorm:"column:other"`
+		Quota            int    `gorm:"column:quota"`
+		PromptTokens     int    `gorm:"column:prompt_tokens"`
+		CompletionTokens int    `gorm:"column:completion_tokens"`
+	}
+	query := model.LOG_DB.Model(&model.Log{}).
+		Select("other, quota, prompt_tokens, completion_tokens").
+		Where("type = ? AND channel_id = ?", model.LogTypeConsume, channelID)
+	if startTimestamp != 0 {
+		query = query.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		query = query.Where("created_at <= ?", endTimestamp)
+	}
+
+	var rows []logUsageRow
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	stats := make(map[int]multiKeyUsageStat)
+	for _, row := range rows {
+		index, ok := multiKeyIndexFromLogOther(row.Other)
+		if !ok {
+			continue
+		}
+		stat := stats[index]
+		stat.UsedQuota += row.Quota
+		stat.RequestCount++
+		stat.PromptTokens += row.PromptTokens
+		stat.CompletionTokens += row.CompletionTokens
+		stats[index] = stat
+	}
+	return stats, nil
+}
+
+func clearAutoDisabledMultiKey(channel *model.Channel, keyIndex int) bool {
+	if channel == nil || channel.ChannelInfo.MultiKeyStatusList == nil {
+		return false
+	}
+	if channel.ChannelInfo.MultiKeyStatusList[keyIndex] != common.ChannelStatusAutoDisabled {
+		return false
+	}
+	delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
+	if channel.ChannelInfo.MultiKeyDisabledTime != nil {
+		delete(channel.ChannelInfo.MultiKeyDisabledTime, keyIndex)
+	}
+	if channel.ChannelInfo.MultiKeyDisabledReason != nil {
+		delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
+	}
+	if channel.ChannelInfo.MultiKeyErrorStatus != nil {
+		delete(channel.ChannelInfo.MultiKeyErrorStatus, keyIndex)
+	}
+	if channel.ChannelInfo.MultiKeyErrorCode != nil {
+		delete(channel.ChannelInfo.MultiKeyErrorCode, keyIndex)
+	}
+	if channel.ChannelInfo.MultiKeyErrorReason != nil {
+		delete(channel.ChannelInfo.MultiKeyErrorReason, keyIndex)
+	}
+	return true
+}
+
+func clearChannelAutoDisabledStateIfNeeded(channel *model.Channel) {
+	if channel == nil || channel.Status != common.ChannelStatusAutoDisabled {
+		return
+	}
+	channel.Status = common.ChannelStatusEnabled
+	info := channel.GetOtherInfo()
+	delete(info, "status_reason")
+	delete(info, "status_time")
+	channel.SetOtherInfo(info)
 }
 
 // ManageMultiKeys handles multi-key management operations
@@ -1546,6 +1695,14 @@ func ManageMultiKeys(c *gin.Context) {
 	switch request.Action {
 	case "get_key_status":
 		keys := channel.GetKeys()
+		usageStats := map[int]multiKeyUsageStat{}
+		if request.IncludeUsage {
+			usageStats, err = getMultiKeyUsageStats(channel.Id, request.StartTimestamp, request.EndTimestamp)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+		}
 
 		// Default pagination parameters
 		page := request.Page
@@ -1603,6 +1760,10 @@ func ManageMultiKeys(c *gin.Context) {
 			if channel.ChannelInfo.MultiKeyErrorReason != nil {
 				errorReason = channel.ChannelInfo.MultiKeyErrorReason[i]
 			}
+			if errorCode == "" {
+				errorCode = deriveMultiKeyErrorCodeFromReason(reason, errorReason)
+			}
+			usage := usageStats[i]
 
 			// Create key preview (first 10 chars)
 			keyPreview := key
@@ -1611,15 +1772,19 @@ func ManageMultiKeys(c *gin.Context) {
 			}
 
 			allKeyStatusList = append(allKeyStatusList, KeyStatus{
-				Index:        i,
-				KeyNo:        i + 1,
-				Status:       status,
-				DisabledTime: disabledTime,
-				Reason:       reason,
-				ErrorStatus:  errorStatus,
-				ErrorCode:    errorCode,
-				ErrorReason:  errorReason,
-				KeyPreview:   keyPreview,
+				Index:            i,
+				KeyNo:            i + 1,
+				Status:           status,
+				DisabledTime:     disabledTime,
+				Reason:           reason,
+				ErrorStatus:      errorStatus,
+				ErrorCode:        errorCode,
+				ErrorReason:      errorReason,
+				KeyPreview:       keyPreview,
+				UsedQuota:        usage.UsedQuota,
+				RequestCount:     usage.RequestCount,
+				PromptTokens:     usage.PromptTokens,
+				CompletionTokens: usage.CompletionTokens,
 			})
 		}
 
@@ -1671,6 +1836,50 @@ func ManageMultiKeys(c *gin.Context) {
 				ManualDisabledCount: manualDisabledCount, // Overall statistics
 				AutoDisabledCount:   autoDisabledCount,   // Overall statistics
 			},
+		})
+		return
+
+	case "test_key":
+		if request.KeyIndex == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "key index is required",
+			})
+			return
+		}
+		keyIndex := *request.KeyIndex
+		if keyIndex < 0 || keyIndex >= channel.ChannelInfo.MultiKeySize {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "key index out of range",
+			})
+			return
+		}
+
+		tik := time.Now()
+		result := testChannelWithOptions(channel, request.Model, request.EndpointType, request.Stream, channelTestOptions{
+			FixedMultiKeyIndex: &keyIndex,
+		})
+		tok := time.Now()
+		milliseconds := tok.Sub(tik).Milliseconds()
+		consumedTime := float64(milliseconds) / 1000.0
+		if result.localErr != nil {
+			resp := gin.H{
+				"success": false,
+				"message": result.localErr.Error(),
+				"time":    consumedTime,
+			}
+			if result.newAPIError != nil {
+				resp["error_code"] = result.newAPIError.GetErrorCode()
+			}
+			c.JSON(http.StatusOK, resp)
+			return
+		}
+		go channel.UpdateResponseTime(milliseconds)
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"time":    consumedTime,
 		})
 		return
 
@@ -1775,23 +1984,9 @@ func ManageMultiKeys(c *gin.Context) {
 				continue
 			}
 
-			delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
-			if channel.ChannelInfo.MultiKeyDisabledTime != nil {
-				delete(channel.ChannelInfo.MultiKeyDisabledTime, keyIndex)
+			if clearAutoDisabledMultiKey(channel, keyIndex) {
+				enabledCount++
 			}
-			if channel.ChannelInfo.MultiKeyDisabledReason != nil {
-				delete(channel.ChannelInfo.MultiKeyDisabledReason, keyIndex)
-			}
-			if channel.ChannelInfo.MultiKeyErrorStatus != nil {
-				delete(channel.ChannelInfo.MultiKeyErrorStatus, keyIndex)
-			}
-			if channel.ChannelInfo.MultiKeyErrorCode != nil {
-				delete(channel.ChannelInfo.MultiKeyErrorCode, keyIndex)
-			}
-			if channel.ChannelInfo.MultiKeyErrorReason != nil {
-				delete(channel.ChannelInfo.MultiKeyErrorReason, keyIndex)
-			}
-			enabledCount++
 		}
 
 		if enabledCount == 0 {
@@ -1803,13 +1998,7 @@ func ManageMultiKeys(c *gin.Context) {
 			return
 		}
 
-		if channel.Status == common.ChannelStatusAutoDisabled {
-			channel.Status = common.ChannelStatusEnabled
-			info := channel.GetOtherInfo()
-			delete(info, "status_reason")
-			delete(info, "status_time")
-			channel.SetOtherInfo(info)
-		}
+		clearChannelAutoDisabledStateIfNeeded(channel)
 
 		err = channel.Update()
 		if err != nil {
@@ -1822,6 +2011,49 @@ func ManageMultiKeys(c *gin.Context) {
 			"success": true,
 			"message": fmt.Sprintf("已恢复 %d 个自动禁用密钥", enabledCount),
 			"data":    enabledCount,
+		})
+		return
+
+	case "enable_auto_disabled_key":
+		if request.KeyIndex == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "key index is required",
+				"data":    0,
+			})
+			return
+		}
+		keyIndex := *request.KeyIndex
+		if keyIndex < 0 || keyIndex >= channel.ChannelInfo.MultiKeySize {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "key index out of range",
+				"data":    0,
+			})
+			return
+		}
+		if !clearAutoDisabledMultiKey(channel, keyIndex) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "no auto-disabled key to restore",
+				"data":    0,
+			})
+			return
+		}
+
+		clearChannelAutoDisabledStateIfNeeded(channel)
+
+		err = channel.Update()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+
+		model.InitChannelCache()
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "key restored",
+			"data":    1,
 		})
 		return
 

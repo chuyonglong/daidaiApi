@@ -370,7 +370,11 @@ export async function getMultiKeyStatus(
   channelId: number,
   page = 1,
   pageSize = 50,
-  status?: number
+  status?: number,
+  usage?: {
+    start_timestamp?: number
+    end_timestamp?: number
+  }
 ): Promise<MultiKeyStatusResponse> {
   return manageMultiKeys({
     channel_id: channelId,
@@ -378,6 +382,9 @@ export async function getMultiKeyStatus(
     page,
     page_size: pageSize,
     status,
+    include_usage: Boolean(usage),
+    start_timestamp: usage?.start_timestamp,
+    end_timestamp: usage?.end_timestamp,
   }) as Promise<MultiKeyStatusResponse>
 }
 
@@ -393,6 +400,20 @@ export async function enableMultiKey(
     action: 'enable_key',
     key_index: keyIndex,
   }) as Promise<{ success: boolean; message?: string }>
+}
+
+/**
+ * Restore a specific auto-disabled key in multi-key channel
+ */
+export async function enableAutoDisabledMultiKey(
+  channelId: number,
+  keyIndex: number
+): Promise<{ success: boolean; message?: string; data?: number }> {
+  return manageMultiKeys({
+    channel_id: channelId,
+    action: 'enable_auto_disabled_key',
+    key_index: keyIndex,
+  }) as Promise<{ success: boolean; message?: string; data?: number }>
 }
 
 /**
@@ -445,6 +466,34 @@ export async function enableAutoDisabledMultiKeys(
     channel_id: channelId,
     action: 'enable_auto_disabled_keys',
   }) as Promise<{ success: boolean; message?: string; data?: number }>
+}
+
+/**
+ * Test a specific key in multi-key channel
+ */
+export async function testMultiKey(
+  channelId: number,
+  keyIndex: number,
+  params?: { model?: string; endpoint_type?: string; stream?: boolean }
+): Promise<{
+  success: boolean
+  message?: string
+  time?: number
+  error_code?: string
+}> {
+  return manageMultiKeys({
+    channel_id: channelId,
+    action: 'test_key',
+    key_index: keyIndex,
+    model: params?.model,
+    endpoint_type: params?.endpoint_type,
+    stream: params?.stream,
+  }) as Promise<{
+    success: boolean
+    message?: string
+    time?: number
+    error_code?: string
+  }>
 }
 
 /**

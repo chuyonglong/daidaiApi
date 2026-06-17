@@ -22,7 +22,7 @@ func setupChannelKeyScriptTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := setupChannelBatchCreateTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.ChannelKeyScript{}))
+	require.NoError(t, db.AutoMigrate(&model.ChannelKeyScript{}, &model.Log{}))
 	return db
 }
 
@@ -230,6 +230,50 @@ func TestManageMultiKeysReturnsInvalidKeyErrorSummary(t *testing.T) {
 	require.Equal(t, "认证失败", response.Data.Keys[0].ErrorReason)
 }
 
+func TestManageMultiKeysDerivesErrorCodeFromDisabledReason(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "multi",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-existing\n2:sk-derived",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:             true,
+			MultiKeySize:           2,
+			MultiKeyMode:           constant.MultiKeyModeRandom,
+			MultiKeyStatusList:     map[int]int{0: common.ChannelStatusAutoDisabled, 1: common.ChannelStatusAutoDisabled},
+			MultiKeyDisabledReason: map[int]string{0: "status_code=403, existing should not be overwritten", 1: "status_code=403, user quota exhausted"},
+			MultiKeyErrorCode:      map[int]string{0: "provider_forbidden"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "get_key_status",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Keys []struct {
+				Index     int    `json:"index"`
+				ErrorCode string `json:"error_code"`
+			} `json:"keys"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data.Keys, 2)
+	require.Equal(t, 0, response.Data.Keys[0].Index)
+	require.Equal(t, "provider_forbidden", response.Data.Keys[0].ErrorCode)
+	require.Equal(t, 1, response.Data.Keys[1].Index)
+	require.Equal(t, "403", response.Data.Keys[1].ErrorCode)
+}
+
 func TestManageMultiKeysEnablesOnlyCurrentChannelAutoDisabledKeys(t *testing.T) {
 	db := setupChannelKeyScriptTestDB(t)
 	channel := model.Channel{
@@ -308,6 +352,176 @@ func TestManageMultiKeysEnablesOnlyCurrentChannelAutoDisabledKeys(t *testing.T) 
 	require.Equal(t, map[int]int{0: http.StatusForbidden}, otherStored.ChannelInfo.MultiKeyErrorStatus)
 	require.Equal(t, map[int]string{0: "insufficient_quota"}, otherStored.ChannelInfo.MultiKeyErrorCode)
 	require.Equal(t, map[int]string{0: "quota"}, otherStored.ChannelInfo.MultiKeyErrorReason)
+}
+
+func TestManageMultiKeysEnablesSingleAutoDisabledKey(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:      "target",
+		Type:      constant.ChannelTypeOpenAI,
+		Key:       "1:sk-enabled\n2:sk-auto\n3:sk-manual",
+		Models:    "gpt-4o",
+		Status:    common.ChannelStatusAutoDisabled,
+		OtherInfo: `{"status_reason":"All keys are disabled","status_time":123}`,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:             true,
+			MultiKeySize:           3,
+			MultiKeyMode:           constant.MultiKeyModeRandom,
+			MultiKeyStatusList:     map[int]int{1: common.ChannelStatusAutoDisabled, 2: common.ChannelStatusManuallyDisabled},
+			MultiKeyDisabledReason: map[int]string{1: "quota exhausted", 2: "manual"},
+			MultiKeyDisabledTime:   map[int]int64{1: 100, 2: 200},
+			MultiKeyErrorStatus:    map[int]int{1: http.StatusForbidden},
+			MultiKeyErrorCode:      map[int]string{1: "insufficient_quota"},
+			MultiKeyErrorReason:    map[int]string{1: "quota"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "enable_auto_disabled_key",
+		"key_index":  1,
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    int    `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, response.Message)
+	require.Equal(t, 1, response.Data)
+
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, common.ChannelStatusEnabled, stored.Status)
+	require.Equal(t, map[int]int{2: common.ChannelStatusManuallyDisabled}, stored.ChannelInfo.MultiKeyStatusList)
+	require.Equal(t, map[int]string{2: "manual"}, stored.ChannelInfo.MultiKeyDisabledReason)
+	require.Equal(t, map[int]int64{2: 200}, stored.ChannelInfo.MultiKeyDisabledTime)
+	require.Empty(t, stored.ChannelInfo.MultiKeyErrorStatus)
+	require.Empty(t, stored.ChannelInfo.MultiKeyErrorCode)
+	require.Empty(t, stored.ChannelInfo.MultiKeyErrorReason)
+	require.NotContains(t, stored.GetOtherInfo(), "status_reason")
+	require.NotContains(t, stored.GetOtherInfo(), "status_time")
+}
+
+func TestManageMultiKeysAggregatesUsageByMultiKeyIndexAndTimeRange(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "usage",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-a\n2:sk-b\n3:sk-c",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 3,
+			MultiKeyMode: constant.MultiKeyModeRandom,
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+	logs := []model.Log{
+		{
+			CreatedAt:        100,
+			Type:             model.LogTypeConsume,
+			ChannelId:        channel.Id,
+			Quota:            10,
+			PromptTokens:     3,
+			CompletionTokens: 7,
+			Other:            `{"admin_info":{"is_multi_key":true,"multi_key_index":0}}`,
+		},
+		{
+			CreatedAt:        120,
+			Type:             model.LogTypeConsume,
+			ChannelId:        channel.Id,
+			Quota:            20,
+			PromptTokens:     8,
+			CompletionTokens: 12,
+			Other:            `{"admin_info":{"is_multi_key":true,"multi_key_index":1}}`,
+		},
+		{
+			CreatedAt:        140,
+			Type:             model.LogTypeConsume,
+			ChannelId:        channel.Id,
+			Quota:            30,
+			PromptTokens:     13,
+			CompletionTokens: 17,
+			Other:            `{"admin_info":{"is_multi_key":true,"multi_key_index":1}}`,
+		},
+		{
+			CreatedAt: 120,
+			Type:      model.LogTypeError,
+			ChannelId: channel.Id,
+			Quota:     999,
+			Other:     `{"admin_info":{"is_multi_key":true,"multi_key_index":1}}`,
+		},
+		{
+			CreatedAt: 120,
+			Type:      model.LogTypeConsume,
+			ChannelId: channel.Id + 100,
+			Quota:     999,
+			Other:     `{"admin_info":{"is_multi_key":true,"multi_key_index":1}}`,
+		},
+	}
+	require.NoError(t, db.Create(&logs).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id":      channel.Id,
+		"action":          "get_key_status",
+		"include_usage":   true,
+		"start_timestamp": 110,
+		"end_timestamp":   130,
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Keys []struct {
+				Index            int `json:"index"`
+				UsedQuota        int `json:"used_quota"`
+				RequestCount     int `json:"request_count"`
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+			} `json:"keys"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data.Keys, 3)
+	require.Equal(t, 0, response.Data.Keys[0].UsedQuota)
+	require.Equal(t, 0, response.Data.Keys[0].RequestCount)
+	require.Equal(t, 20, response.Data.Keys[1].UsedQuota)
+	require.Equal(t, 1, response.Data.Keys[1].RequestCount)
+	require.Equal(t, 8, response.Data.Keys[1].PromptTokens)
+	require.Equal(t, 12, response.Data.Keys[1].CompletionTokens)
+	require.Equal(t, 0, response.Data.Keys[2].UsedQuota)
+}
+
+func TestSelectMultiKeyForTestUsesRequestedKeyIndex(t *testing.T) {
+	channel := &model.Channel{
+		Id:     77,
+		Name:   "fixed",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-a\n2:sk-disabled",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:         true,
+			MultiKeySize:       2,
+			MultiKeyMode:       constant.MultiKeyModeRandom,
+			MultiKeyStatusList: map[int]int{1: common.ChannelStatusAutoDisabled},
+		},
+	}
+
+	key, index, err := selectMultiKeyForTest(channel, 1)
+
+	require.NoError(t, err)
+	require.Equal(t, "sk-disabled", key)
+	require.Equal(t, 1, index)
 }
 
 func TestManageMultiKeysEnableAutoDisabledKeysNoopsWhenNoneExist(t *testing.T) {

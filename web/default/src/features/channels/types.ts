@@ -225,6 +225,10 @@ export interface KeyStatus {
   error_code?: string
   error_reason?: string
   key_preview?: string
+  used_quota?: number
+  request_count?: number
+  prompt_tokens?: number
+  completion_tokens?: number
 }
 
 export interface InvalidMultiKeySummary {
@@ -240,8 +244,10 @@ export interface InvalidMultiKeySummary {
 export type MultiKeyConfirmAction = {
   type:
     | 'enable'
+    | 'restore'
     | 'disable'
     | 'delete'
+    | 'restore-auto-disabled'
     | 'enable-all'
     | 'disable-all'
     | 'delete-disabled'
@@ -318,15 +324,23 @@ export interface MultiKeyManageParams {
     | 'get_key_status'
     | 'disable_key'
     | 'enable_key'
+    | 'enable_auto_disabled_key'
     | 'enable_auto_disabled_keys'
     | 'enable_all_keys'
     | 'disable_all_keys'
     | 'delete_key'
     | 'delete_disabled_keys'
+    | 'test_key'
   key_index?: number
   page?: number
   page_size?: number
   status?: number // 1=enabled, 2=manual_disabled, 3=auto_disabled
+  include_usage?: boolean
+  start_timestamp?: number
+  end_timestamp?: number
+  model?: string
+  endpoint_type?: string
+  stream?: boolean
 }
 
 export interface BatchDeleteParams {

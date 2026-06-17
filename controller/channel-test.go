@@ -43,6 +43,10 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+type channelTestOptions struct {
+	FixedMultiKeyIndex *int
+}
+
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
 	if normalized != "" {
@@ -57,7 +61,22 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	return normalized
 }
 
+func selectMultiKeyForTest(channel *model.Channel, keyIndex int) (string, int, error) {
+	if channel == nil || !channel.ChannelInfo.IsMultiKey {
+		return "", 0, errors.New("channel is not in multi-key mode")
+	}
+	keys := channel.GetKeys()
+	if keyIndex < 0 || keyIndex >= len(keys) {
+		return "", 0, fmt.Errorf("key index out of range")
+	}
+	return keys[keyIndex], keyIndex, nil
+}
+
 func testChannel(channel *model.Channel, testModel string, endpointType string, isStream bool) testResult {
+	return testChannelWithOptions(channel, testModel, endpointType, isStream, channelTestOptions{})
+}
+
+func testChannelWithOptions(channel *model.Channel, testModel string, endpointType string, isStream bool, options channelTestOptions) testResult {
 	tik := time.Now()
 	var unsupportedTestChannelTypes = []int{
 		constant.ChannelTypeMidjourney,
@@ -160,13 +179,37 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 	group, _ := model.GetUserGroup(1, false)
 	c.Set("group", group)
 
-	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, testModel)
+	setupChannel := channel
+	var fixedKey string
+	var fixedIndex int
+	if options.FixedMultiKeyIndex != nil {
+		var fixedErr error
+		fixedKey, fixedIndex, fixedErr = selectMultiKeyForTest(channel, *options.FixedMultiKeyIndex)
+		if fixedErr != nil {
+			return testResult{
+				context:     c,
+				localErr:    fixedErr,
+				newAPIError: types.NewError(fixedErr, types.ErrorCodeChannelNoAvailableKey),
+			}
+		}
+		copied := *channel
+		copied.Key = fixedKey
+		copied.ChannelInfo = model.ChannelInfo{}
+		setupChannel = &copied
+	}
+
+	newAPIError := middleware.SetupContextForSelectedChannel(c, setupChannel, testModel)
 	if newAPIError != nil {
 		return testResult{
 			context:     c,
 			localErr:    newAPIError,
 			newAPIError: newAPIError,
 		}
+	}
+	if options.FixedMultiKeyIndex != nil {
+		common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, true)
+		common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, fixedIndex)
+		common.SetContextKey(c, constant.ContextKeyChannelKey, fixedKey)
 	}
 
 	// Determine relay format based on endpoint type or request path

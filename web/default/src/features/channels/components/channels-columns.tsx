@@ -99,6 +99,48 @@ function parseIonetMeta(otherInfo: string | null | undefined): null | {
   return null
 }
 
+function isInteractiveClickTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return Boolean(
+    target.closest(
+      'button, input, textarea, select, a, [role="button"], [data-multi-key-ignore-click]'
+    )
+  )
+}
+
+function MultiKeyClickableCell({
+  channel,
+  children,
+  className,
+}: {
+  channel: Channel
+  children: React.ReactNode
+  className?: string
+}) {
+  const { setCurrentRow, setOpen } = useChannels()
+  const isMultiKey = isMultiKeyChannel(channel)
+
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isMultiKey || isInteractiveClickTarget(event.target)) return
+    event.stopPropagation()
+    setCurrentRow(channel)
+    setOpen('multi-key-manage')
+  }
+
+  return (
+    <div
+      className={cn(
+        'min-h-7',
+        isMultiKey && 'cursor-pointer transition-opacity hover:opacity-80',
+        className
+      )}
+      onClick={handleClick}
+    >
+      {children}
+    </div>
+  )
+}
+
 /**
  * Render limited items with "and X more" indicator
  */
@@ -490,14 +532,17 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
       ),
       cell: ({ row }) => {
         const id = row.getValue('id') as number
+        const channel = row.original
         return (
-          <StatusBadge
-            label={String(id)}
-            variant='neutral'
-            copyText={String(id)}
-            size='sm'
-            className='font-mono'
-          />
+          <MultiKeyClickableCell channel={channel}>
+            <StatusBadge
+              label={String(id)}
+              variant='neutral'
+              size='sm'
+              copyable={false}
+              className='font-mono'
+            />
+          </MultiKeyClickableCell>
         )
       },
       size: 80,
@@ -553,7 +598,10 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
         const isPassThrough = settings.pass_through_body_enabled === true
 
         return (
-          <div className='flex items-center gap-2'>
+          <MultiKeyClickableCell
+            channel={channel}
+            className='flex items-center gap-2'
+          >
             <div className='flex flex-col gap-1'>
               <div className='flex items-center gap-1.5'>
                 <span className='font-medium'>{truncateText(name, 30)}</span>
@@ -600,7 +648,7 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
                 </TooltipProvider>
               )}
             </div>
-          </div>
+          </MultiKeyClickableCell>
         )
       },
       minSize: 200,
@@ -648,7 +696,10 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
             : undefined
 
         return (
-          <div className='flex items-center gap-2'>
+          <MultiKeyClickableCell
+            channel={channel}
+            className='flex items-center gap-2'
+          >
             <div className='flex items-center gap-1.5'>
               {isMultiKey && (
                 <TooltipProvider delay={100}>
@@ -680,6 +731,7 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
                   <TooltipTrigger
                     render={
                       <span
+                        data-multi-key-ignore-click
                         className='flex cursor-pointer items-center gap-1.5 text-xs font-medium'
                         onClick={(e) => {
                           e.stopPropagation()
@@ -711,7 +763,7 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
                 </Tooltip>
               </TooltipProvider>
             )}
-          </div>
+          </MultiKeyClickableCell>
         )
       },
       filterFn: (row, id, value) => {
@@ -795,45 +847,49 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
 
           if (statusReason || statusTime) {
             return (
-              <TooltipProvider delay={100}>
-                <Tooltip>
-                  <TooltipTrigger render={<span />}>
-                    <StatusBadge
-                      label={label}
-                      variant={config.variant}
-                      showDot={config.showDot}
-                      size='sm'
-                      copyable={false}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side='top' className='max-w-xs'>
-                    <div className='space-y-1 text-xs'>
-                      {statusReason && (
-                        <div>
-                          {t('Reason:')} {statusReason}
-                        </div>
-                      )}
-                      {statusTime && (
-                        <div>
-                          {t('Time:')} {statusTime}
-                        </div>
-                      )}
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <MultiKeyClickableCell channel={channel}>
+                <TooltipProvider delay={100}>
+                  <Tooltip>
+                    <TooltipTrigger render={<span />}>
+                      <StatusBadge
+                        label={label}
+                        variant={config.variant}
+                        showDot={config.showDot}
+                        size='sm'
+                        copyable={false}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side='top' className='max-w-xs'>
+                      <div className='space-y-1 text-xs'>
+                        {statusReason && (
+                          <div>
+                            {t('Reason:')} {statusReason}
+                          </div>
+                        )}
+                        {statusTime && (
+                          <div>
+                            {t('Time:')} {statusTime}
+                          </div>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </MultiKeyClickableCell>
             )
           }
         }
 
         return (
-          <StatusBadge
-            label={label}
-            variant={config.variant}
-            showDot={config.showDot}
-            size='sm'
-            copyable={false}
-          />
+          <MultiKeyClickableCell channel={channel}>
+            <StatusBadge
+              label={label}
+              variant={config.variant}
+              showDot={config.showDot}
+              size='sm'
+              copyable={false}
+            />
+          </MultiKeyClickableCell>
         )
       },
       filterFn: (row, id, value) => {
@@ -900,27 +956,30 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
       cell: ({ row }) => {
         const group = row.getValue('group') as string
         const groupArray = parseGroupsList(group)
+        const channel = row.original
 
         const groupBadges = groupArray.map((g) => (
           <GroupBadge key={g} group={g} size='sm' />
         ))
 
         return (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger render={<div />}>
-                {renderLimitedItems(groupBadges, 2)}
-              </TooltipTrigger>
-              {groupArray.length > 2 && (
-                <TooltipContent
-                  side='top'
-                  className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
-                >
-                  <div className='flex flex-wrap gap-1'>{groupBadges}</div>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+          <MultiKeyClickableCell channel={channel}>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger render={<div />}>
+                  {renderLimitedItems(groupBadges, 2)}
+                </TooltipTrigger>
+                {groupArray.length > 2 && (
+                  <TooltipContent
+                    side='top'
+                    className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
+                  >
+                    <div className='flex flex-wrap gap-1'>{groupBadges}</div>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          </MultiKeyClickableCell>
         )
       },
       filterFn: (row, id, value) => {
@@ -956,7 +1015,11 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('Priority')} />
       ),
-      cell: ({ row }) => <PriorityCell channel={row.original} />,
+      cell: ({ row }) => (
+        <MultiKeyClickableCell channel={row.original}>
+          <PriorityCell channel={row.original} />
+        </MultiKeyClickableCell>
+      ),
       size: 100,
     },
 
@@ -965,7 +1028,11 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
       accessorKey: 'weight',
       meta: { label: t('Weight'), mobileHidden: true },
       header: t('Weight'),
-      cell: ({ row }) => <WeightCell channel={row.original} />,
+      cell: ({ row }) => (
+        <MultiKeyClickableCell channel={row.original}>
+          <WeightCell channel={row.original} />
+        </MultiKeyClickableCell>
+      ),
       size: 90,
       enableSorting: false,
     },

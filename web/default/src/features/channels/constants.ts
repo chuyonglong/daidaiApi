@@ -215,7 +215,9 @@ export const MULTI_KEY_CONFIRM_MESSAGES = {
   DELETE:
     'Are you sure you want to delete this key? This action cannot be undone.',
   ENABLE: 'Enable this key?',
+  RESTORE: 'Restore this auto-disabled key?',
   DISABLE: 'Disable this key?',
+  RESTORE_AUTO_DISABLED: 'Restore all auto-disabled keys?',
   ENABLE_ALL: 'Are you sure you want to enable all keys?',
   DISABLE_ALL: 'Are you sure you want to disable all enabled keys?',
   DELETE_DISABLED:

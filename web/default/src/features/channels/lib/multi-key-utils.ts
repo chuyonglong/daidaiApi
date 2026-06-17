@@ -45,10 +45,14 @@ export function getMultiKeyConfirmMessage(
   switch (action.type) {
     case 'delete':
       return MULTI_KEY_CONFIRM_MESSAGES.DELETE
+    case 'restore':
+      return MULTI_KEY_CONFIRM_MESSAGES.RESTORE
     case 'enable':
       return MULTI_KEY_CONFIRM_MESSAGES.ENABLE
     case 'disable':
       return MULTI_KEY_CONFIRM_MESSAGES.DISABLE
+    case 'restore-auto-disabled':
+      return MULTI_KEY_CONFIRM_MESSAGES.RESTORE_AUTO_DISABLED
     case 'enable-all':
       return MULTI_KEY_CONFIRM_MESSAGES.ENABLE_ALL
     case 'disable-all':
