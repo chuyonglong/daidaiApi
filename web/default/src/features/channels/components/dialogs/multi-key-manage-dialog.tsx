@@ -21,7 +21,9 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   Calendar,
+  Check,
   CheckCircle2,
+  Copy,
   Loader2,
   Play,
   Power,
@@ -35,18 +37,21 @@ import { toast } from 'sonner'
 import dayjs from '@/lib/dayjs'
 import { formatLogQuota, formatTokens } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { DateTimePicker } from '@/components/datetime-picker'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -82,6 +87,11 @@ import {
 } from '@/features/dashboard/lib'
 import type { DashboardTimeRange } from '@/features/dashboard/types'
 import {
+  SecureVerificationDialog,
+  useSecureVerification,
+} from '@/features/auth/secure-verification'
+import {
+  getChannelKey,
   getMultiKeyStatus,
   enableMultiKey,
   enableAutoDisabledMultiKey,
@@ -92,6 +102,7 @@ import {
   disableAllMultiKeys,
   deleteDisabledMultiKeys,
   testMultiKey,
+  updateMultiKeyRemark,
 } from '../../api'
 import { MULTI_KEY_FILTER_OPTIONS } from '../../constants'
 import {
@@ -125,32 +136,40 @@ type UsageRange = {
   preset: DashboardTimeRange | 'custom'
 }
 
+type EditingRemark = {
+  keyIndex: number
+  keyPreview?: string
+  remark: string
+}
+
 const DEFAULT_COLUMN_WIDTHS = {
-  index: 64,
-  key: 140,
-  status: 120,
-  usage: 120,
-  requests: 100,
-  token: 110,
-  testResult: 130,
-  errorCode: 150,
-  disabledTime: 180,
-  actions: 340,
+  index: 56,
+  key: 150,
+  status: 100,
+  remark: 120,
+  usage: 100,
+  requests: 90,
+  token: 90,
+  testResult: 105,
+  errorCode: 105,
+  disabledTime: 125,
+  actions: 300,
 } as const
 
 type MultiKeyColumnKey = keyof typeof DEFAULT_COLUMN_WIDTHS
 
 const MIN_COLUMN_WIDTHS: Record<MultiKeyColumnKey, number> = {
   index: 56,
-  key: 110,
-  status: 100,
-  usage: 100,
-  requests: 90,
-  token: 90,
-  testResult: 110,
-  errorCode: 120,
-  disabledTime: 150,
-  actions: 300,
+  key: 130,
+  status: 90,
+  remark: 90,
+  usage: 90,
+  requests: 80,
+  token: 80,
+  testResult: 90,
+  errorCode: 90,
+  disabledTime: 110,
+  actions: 280,
 }
 
 const MULTI_KEY_COLUMNS: Array<{
@@ -160,6 +179,7 @@ const MULTI_KEY_COLUMNS: Array<{
   { key: 'index', label: 'Index' },
   { key: 'key', label: 'Key' },
   { key: 'status', label: 'Status' },
+  { key: 'remark', label: 'Remark' },
   { key: 'usage', label: 'Usage' },
   { key: 'requests', label: 'Requests' },
   { key: 'token', label: 'token' },
@@ -192,6 +212,33 @@ function formatDateRange(start?: Date, end?: Date): string {
   return `${startText} ~ ${endText}`
 }
 
+function normalizeMultiKeyLine(line: string): string {
+  const trimmed = line.trim()
+  if (!trimmed) return ''
+
+  const indexedMatch = trimmed.match(/^\d+\s*[:：]\s*(.+)$/)
+  return indexedMatch ? indexedMatch[1].trim() : trimmed
+}
+
+function splitMultiKeyLines(keyText: string): string[] {
+  try {
+    const parsed = JSON.parse(keyText) as unknown
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => normalizeMultiKeyLine(String(item)))
+        .filter(Boolean)
+    }
+  } catch {
+    // Plain newline-separated multi-key text is the common storage format.
+  }
+
+  return keyText
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map(normalizeMultiKeyLine)
+    .filter(Boolean)
+}
+
 export function MultiKeyManageDialog({
   open,
   onOpenChange,
@@ -199,6 +246,17 @@ export function MultiKeyManageDialog({
   const { t } = useTranslation()
   const { currentRow } = useChannels()
   const queryClient = useQueryClient()
+  const { copyToClipboard } = useCopyToClipboard()
+  const {
+    open: verificationOpen,
+    methods: verificationMethods,
+    state: verificationState,
+    executeVerification,
+    withVerification,
+    cancel: cancelVerification,
+    setCode: setVerificationCode,
+    switchMethod: switchVerificationMethod,
+  } = useSecureVerification()
 
   const [isInitialLoading, setIsInitialLoading] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -219,6 +277,14 @@ export function MultiKeyManageDialog({
   )
   const [testStates, setTestStates] = useState<Record<number, TestState>>({})
   const [isTestingAll, setIsTestingAll] = useState(false)
+  const [editingRemark, setEditingRemark] = useState<EditingRemark | null>(
+    null
+  )
+  const [remarkDraft, setRemarkDraft] = useState('')
+  const [isSavingRemark, setIsSavingRemark] = useState(false)
+  const [fullKeys, setFullKeys] = useState<string[] | null>(null)
+  const [copyingKeyIndex, setCopyingKeyIndex] = useState<number | null>(null)
+  const [copiedKeyIndex, setCopiedKeyIndex] = useState<number | null>(null)
   const [columnWidths, setColumnWidths] =
     useState<Record<MultiKeyColumnKey, number>>({ ...DEFAULT_COLUMN_WIDTHS })
 
@@ -238,6 +304,11 @@ export function MultiKeyManageDialog({
       setCurrentPage(1)
       setStatusFilter(null)
       setTestStates({})
+      setEditingRemark(null)
+      setRemarkDraft('')
+      setFullKeys(null)
+      setCopyingKeyIndex(null)
+      setCopiedKeyIndex(null)
       setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS })
       loadKeyStatus(
         1,
@@ -369,6 +440,10 @@ export function MultiKeyManageDialog({
 
       if (response?.success) {
         toast.success(response.message || t('Operation successful'))
+        if (type === 'delete' || type === 'delete-disabled') {
+          setFullKeys(null)
+          setCopiedKeyIndex(null)
+        }
         queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
         const isBulkAction =
           type.includes('all') ||
@@ -449,6 +524,108 @@ export function MultiKeyManageDialog({
     } finally {
       setIsTestingAll(false)
       loadKeyStatus(currentPage, pageSize)
+    }
+  }
+
+  const openRemarkEditor = (key: KeyStatus) => {
+    const remark = key.remark || ''
+    setEditingRemark({
+      keyIndex: key.index,
+      keyPreview: key.key_preview,
+      remark,
+    })
+    setRemarkDraft(remark)
+  }
+
+  const handleSaveRemark = async () => {
+    if (!currentRow || !editingRemark) return
+
+    setIsSavingRemark(true)
+    try {
+      const response = await updateMultiKeyRemark(
+        currentRow.id,
+        editingRemark.keyIndex,
+        remarkDraft
+      )
+      if (response.success) {
+        toast.success(response.message || t('Remark updated'))
+        setEditingRemark(null)
+        setRemarkDraft('')
+        loadKeyStatus(currentPage, pageSize, statusFilter, usageParams, {
+          keepData: true,
+        })
+      } else {
+        toast.error(response.message || t('Failed to update remark'))
+      }
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : t('Failed to update remark')
+      )
+    } finally {
+      setIsSavingRemark(false)
+    }
+  }
+
+  const fetchFullKeys = async () => {
+    if (!currentRow) {
+      throw new Error(t('Channel key is not available'))
+    }
+
+    const response = await getChannelKey(currentRow.id)
+    if (!response.success) {
+      throw new Error(response.message || t('Failed to fetch channel key'))
+    }
+
+    const nextFullKeys = splitMultiKeyLines(response.data?.key ?? '')
+    setFullKeys(nextFullKeys)
+    return nextFullKeys
+  }
+
+  const copyFullKey = async (keyIndex: number, sourceKeys = fullKeys) => {
+    const keyValue = sourceKeys?.[keyIndex]
+    if (!keyValue) {
+      throw new Error(t('Channel key is not available'))
+    }
+
+    const copied = await copyToClipboard(keyValue)
+    if (copied) {
+      setCopiedKeyIndex(keyIndex)
+      window.setTimeout(() => {
+        setCopiedKeyIndex((prev) => (prev === keyIndex ? null : prev))
+      }, 2000)
+    }
+  }
+
+  const handleCopyKey = async (keyIndex: number) => {
+    if (copyingKeyIndex !== null) return
+
+    setCopyingKeyIndex(keyIndex)
+    try {
+      if (fullKeys) {
+        await copyFullKey(keyIndex, fullKeys)
+        return
+      }
+
+      await withVerification(
+        async () => {
+          const nextFullKeys = await fetchFullKeys()
+          await copyFullKey(keyIndex, nextFullKeys)
+          return nextFullKeys
+        },
+        {
+          preferredMethod: 'passkey',
+          title: t('Verify to copy channel key'),
+          description: t(
+            'Use Passkey or 2FA to confirm your identity before copying this channel key.'
+          ),
+        }
+      )
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : t('Failed to fetch channel key')
+      )
+    } finally {
+      setCopyingKeyIndex(null)
     }
   }
 
@@ -568,6 +745,80 @@ export function MultiKeyManageDialog({
                 <span key={detail}>{detail}</span>
               ))}
             </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  const renderKeyPreview = (key: KeyStatus) => {
+    const isCopying = copyingKeyIndex === key.index
+    const isCopied = copiedKeyIndex === key.index
+
+    return (
+      <div className='flex min-w-0 items-center justify-center gap-1'>
+        <span className='min-w-0 truncate'>{key.key_preview || '-'}</span>
+        <TooltipProvider delay={100}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon'
+                  className='size-7 shrink-0'
+                  disabled={isCopying}
+                  aria-label={t('Copy Key')}
+                  onClick={() => handleCopyKey(key.index)}
+                >
+                  {isCopying ? (
+                    <Loader2 className='animate-spin' />
+                  ) : isCopied ? (
+                    <Check className='text-success' />
+                  ) : (
+                    <Copy />
+                  )}
+                </Button>
+              }
+            />
+            <TooltipContent>
+              {isCopied ? t('Copied!') : t('Copy Key')}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    )
+  }
+
+  const renderRemark = (key: KeyStatus) => {
+    const remark = key.remark?.trim()
+    const content = (
+      <button
+        type='button'
+        className='hover:bg-muted focus-visible:ring-ring/50 block w-full min-w-0 rounded px-2 py-1 text-center text-xs outline-none focus-visible:ring-2'
+        onClick={() => openRemarkEditor(key)}
+      >
+        <span
+          className={cn(
+            'block truncate',
+            remark ? 'text-foreground' : 'text-muted-foreground'
+          )}
+        >
+          {remark || '-'}
+        </span>
+      </button>
+    )
+
+    if (!remark) {
+      return content
+    }
+
+    return (
+      <TooltipProvider delay={100}>
+        <Tooltip>
+          <TooltipTrigger render={content} />
+          <TooltipContent className='max-w-md whitespace-pre-wrap'>
+            {remark}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -814,7 +1065,7 @@ export function MultiKeyManageDialog({
                   {t('No keys found')}
                 </div>
               ) : (
-                <div className='min-w-full' style={{ minWidth: tableWidth }}>
+                <div className='w-full' style={{ minWidth: tableWidth }}>
                   <Table
                     className='min-w-full table-fixed'
                     style={{ width: '100%' }}
@@ -843,10 +1094,13 @@ export function MultiKeyManageDialog({
                               #{key.index + 1}
                             </TableCell>
                             <TableCell className='truncate px-3 text-center font-mono text-xs'>
-                              {key.key_preview || '-'}
+                              {renderKeyPreview(key)}
                             </TableCell>
                             <TableCell className='px-3 text-center'>
                               {renderStatusBadge(key.status)}
+                            </TableCell>
+                            <TableCell className='px-3 text-center'>
+                              {renderRemark(key)}
                             </TableCell>
                             <TableCell className='px-3 text-center font-mono text-sm'>
                               {formatLogQuota(key.used_quota || 0)}
@@ -930,6 +1184,85 @@ export function MultiKeyManageDialog({
         destructive={isDestructiveAction(confirmAction)}
         isLoading={isPerformingAction}
         handleConfirm={performAction}
+      />
+
+      <Dialog
+        open={editingRemark !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !isSavingRemark) {
+            setEditingRemark(null)
+            setRemarkDraft('')
+          }
+        }}
+      >
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>{t('Edit Remark')}</DialogTitle>
+            <DialogDescription>
+              {editingRemark
+                ? t('Key #{{index}} {{key}}', {
+                    index: editingRemark.keyIndex + 1,
+                    key: editingRemark.keyPreview || '',
+                  })
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className='flex flex-col gap-2'>
+            <Label htmlFor='multi-key-remark'>{t('Remark')}</Label>
+            <Textarea
+              id='multi-key-remark'
+              value={remarkDraft}
+              maxLength={255}
+              rows={4}
+              autoSize={false}
+              placeholder={t('Optional notes for this key')}
+              onChange={(event) => setRemarkDraft(event.target.value)}
+            />
+            <div className='text-muted-foreground text-right text-xs'>
+              {remarkDraft.length}/255
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={isSavingRemark}
+              onClick={() => {
+                setEditingRemark(null)
+                setRemarkDraft('')
+              }}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              disabled={isSavingRemark}
+              onClick={handleSaveRemark}
+            >
+              {isSavingRemark && (
+                <Loader2 className='animate-spin' data-icon='inline-start' />
+              )}
+              {t('Save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <SecureVerificationDialog
+        open={verificationOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            cancelVerification()
+          }
+        }}
+        methods={verificationMethods}
+        state={verificationState}
+        onVerify={async (method, code) => {
+          await executeVerification(method, code)
+        }}
+        onCancel={cancelVerification}
+        onCodeChange={setVerificationCode}
+        onMethodChange={switchVerificationMethod}
       />
     </>
   )

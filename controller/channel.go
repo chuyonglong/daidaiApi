@@ -1493,6 +1493,7 @@ type MultiKeyManageRequest struct {
 	Model          string `json:"model,omitempty"`
 	EndpointType   string `json:"endpoint_type,omitempty"`
 	Stream         bool   `json:"stream,omitempty"`
+	Remark         string `json:"remark,omitempty"`
 }
 
 // MultiKeyStatusResponse represents the response for key status query
@@ -1518,6 +1519,7 @@ type KeyStatus struct {
 	ErrorCode        string `json:"error_code,omitempty"`
 	ErrorReason      string `json:"error_reason,omitempty"`
 	KeyPreview       string `json:"key_preview"` // first 10 chars of key for identification
+	Remark           string `json:"remark,omitempty"`
 	UsedQuota        int    `json:"used_quota"`
 	RequestCount     int    `json:"request_count"`
 	PromptTokens     int    `json:"prompt_tokens"`
@@ -1763,6 +1765,10 @@ func ManageMultiKeys(c *gin.Context) {
 			if errorCode == "" {
 				errorCode = deriveMultiKeyErrorCodeFromReason(reason, errorReason)
 			}
+			remark := ""
+			if channel.ChannelInfo.MultiKeyRemarks != nil {
+				remark = channel.ChannelInfo.MultiKeyRemarks[i]
+			}
 			usage := usageStats[i]
 
 			// Create key preview (first 10 chars)
@@ -1781,6 +1787,7 @@ func ManageMultiKeys(c *gin.Context) {
 				ErrorCode:        errorCode,
 				ErrorReason:      errorReason,
 				KeyPreview:       keyPreview,
+				Remark:           remark,
 				UsedQuota:        usage.UsedQuota,
 				RequestCount:     usage.RequestCount,
 				PromptTokens:     usage.PromptTokens,
@@ -1836,6 +1843,56 @@ func ManageMultiKeys(c *gin.Context) {
 				ManualDisabledCount: manualDisabledCount, // Overall statistics
 				AutoDisabledCount:   autoDisabledCount,   // Overall statistics
 			},
+		})
+		return
+
+	case "update_key_remark":
+		if request.KeyIndex == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "key index is required",
+			})
+			return
+		}
+		keyIndex := *request.KeyIndex
+		if keyIndex < 0 || keyIndex >= channel.ChannelInfo.MultiKeySize {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "key index out of range",
+			})
+			return
+		}
+
+		remark := strings.TrimSpace(request.Remark)
+		if len([]rune(remark)) > 255 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "remark must be less than 255 characters",
+			})
+			return
+		}
+
+		if remark == "" {
+			if channel.ChannelInfo.MultiKeyRemarks != nil {
+				delete(channel.ChannelInfo.MultiKeyRemarks, keyIndex)
+			}
+		} else {
+			if channel.ChannelInfo.MultiKeyRemarks == nil {
+				channel.ChannelInfo.MultiKeyRemarks = make(map[int]string)
+			}
+			channel.ChannelInfo.MultiKeyRemarks[keyIndex] = remark
+		}
+
+		err = channel.Update()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+
+		model.InitChannelCache()
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "remark updated",
 		})
 		return
 
@@ -2157,6 +2214,7 @@ func ManageMultiKeys(c *gin.Context) {
 		var newErrorStatus = make(map[int]int)
 		var newErrorCode = make(map[int]string)
 		var newErrorReason = make(map[int]string)
+		var newRemarks = make(map[int]string)
 
 		newIndex := 0
 		for i, key := range keys {
@@ -2198,6 +2256,11 @@ func ManageMultiKeys(c *gin.Context) {
 					newErrorReason[newIndex] = reason
 				}
 			}
+			if channel.ChannelInfo.MultiKeyRemarks != nil {
+				if remark, exists := channel.ChannelInfo.MultiKeyRemarks[i]; exists {
+					newRemarks[newIndex] = remark
+				}
+			}
 			newIndex++
 		}
 
@@ -2218,6 +2281,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyErrorStatus = newErrorStatus
 		channel.ChannelInfo.MultiKeyErrorCode = newErrorCode
 		channel.ChannelInfo.MultiKeyErrorReason = newErrorReason
+		channel.ChannelInfo.MultiKeyRemarks = newRemarks
 
 		err = channel.Update()
 		if err != nil {
@@ -2242,6 +2306,7 @@ func ManageMultiKeys(c *gin.Context) {
 		var newErrorStatus = make(map[int]int)
 		var newErrorCode = make(map[int]string)
 		var newErrorReason = make(map[int]string)
+		var newRemarks = make(map[int]string)
 
 		newIndex := 0
 		for i, key := range keys {
@@ -2286,6 +2351,11 @@ func ManageMultiKeys(c *gin.Context) {
 						}
 					}
 				}
+				if channel.ChannelInfo.MultiKeyRemarks != nil {
+					if remark, exists := channel.ChannelInfo.MultiKeyRemarks[i]; exists {
+						newRemarks[newIndex] = remark
+					}
+				}
 				newIndex++
 			}
 		}
@@ -2307,6 +2377,7 @@ func ManageMultiKeys(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyErrorStatus = newErrorStatus
 		channel.ChannelInfo.MultiKeyErrorCode = newErrorCode
 		channel.ChannelInfo.MultiKeyErrorReason = newErrorReason
+		channel.ChannelInfo.MultiKeyRemarks = newRemarks
 
 		err = channel.Update()
 		if err != nil {

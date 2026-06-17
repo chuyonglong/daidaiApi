@@ -225,6 +225,7 @@ export interface KeyStatus {
   error_code?: string
   error_reason?: string
   key_preview?: string
+  remark?: string
   used_quota?: number
   request_count?: number
   prompt_tokens?: number
@@ -331,7 +332,9 @@ export interface MultiKeyManageParams {
     | 'delete_key'
     | 'delete_disabled_keys'
     | 'test_key'
+    | 'update_key_remark'
   key_index?: number
+  remark?: string
   page?: number
   page_size?: number
   status?: number // 1=enabled, 2=manual_disabled, 3=auto_disabled

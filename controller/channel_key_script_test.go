@@ -141,6 +141,30 @@ func TestBackfillChannelKeyScriptUpdatesMultiKeyChannel(t *testing.T) {
 	require.Equal(t, 3, stored.ChannelInfo.MultiKeySize)
 }
 
+func TestBackfillChannelKeyScriptRemapsRemarks(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "multi",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "sk-old\nsk-mid\nsk-extra",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:      true,
+			MultiKeySize:    3,
+			MultiKeyMode:    constant.MultiKeyModeRandom,
+			MultiKeyRemarks: map[int]string{0: "old", 2: "extra"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	result, err := backfillChannelKeyScriptKeys(channel.Id, "sk-new\nsk-extra\nsk-old")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, map[int]string{1: "extra", 2: "old"}, result.ChannelInfo.MultiKeyRemarks)
+}
+
 func TestExecuteChannelKeyScriptReturnsMergedKeys(t *testing.T) {
 	db := setupChannelKeyScriptTestDB(t)
 	channel := model.Channel{
@@ -499,6 +523,156 @@ func TestManageMultiKeysAggregatesUsageByMultiKeyIndexAndTimeRange(t *testing.T)
 	require.Equal(t, 8, response.Data.Keys[1].PromptTokens)
 	require.Equal(t, 12, response.Data.Keys[1].CompletionTokens)
 	require.Equal(t, 0, response.Data.Keys[2].UsedQuota)
+}
+
+func TestManageMultiKeysReturnsAndUpdatesKeyRemark(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "remarks",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-a\n2:sk-b",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:      true,
+			MultiKeySize:    2,
+			MultiKeyMode:    constant.MultiKeyModeRandom,
+			MultiKeyRemarks: map[int]string{1: "backup account"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "get_key_status",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var statusResponse struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Keys []struct {
+				Index  int    `json:"index"`
+				Remark string `json:"remark"`
+			} `json:"keys"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &statusResponse))
+	require.True(t, statusResponse.Success)
+	require.Len(t, statusResponse.Data.Keys, 2)
+	require.Equal(t, "", statusResponse.Data.Keys[0].Remark)
+	require.Equal(t, "backup account", statusResponse.Data.Keys[1].Remark)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "update_key_remark",
+		"key_index":  0,
+		"remark":     " primary account ",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var updateResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &updateResponse))
+	require.True(t, updateResponse.Success, updateResponse.Message)
+
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, map[int]string{0: "primary account", 1: "backup account"}, stored.ChannelInfo.MultiKeyRemarks)
+
+	ctx, recorder = newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "update_key_remark",
+		"key_index":  1,
+		"remark":     " ",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &updateResponse))
+	require.True(t, updateResponse.Success, updateResponse.Message)
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, map[int]string{0: "primary account"}, stored.ChannelInfo.MultiKeyRemarks)
+}
+
+func TestManageMultiKeysRejectsTooLongRemark(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "remark-limit",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-a",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:      true,
+			MultiKeySize:    1,
+			MultiKeyMode:    constant.MultiKeyModeRandom,
+			MultiKeyRemarks: map[int]string{0: "existing"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "update_key_remark",
+		"key_index":  0,
+		"remark":     strings.Repeat("a", 256),
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.False(t, response.Success)
+
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, map[int]string{0: "existing"}, stored.ChannelInfo.MultiKeyRemarks)
+}
+
+func TestManageMultiKeysDeleteKeyRemapsRemarks(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "remark-delete",
+		Type:   constant.ChannelTypeOpenAI,
+		Key:    "1:sk-a\n2:sk-b\n3:sk-c",
+		Models: "gpt-4o",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:      true,
+			MultiKeySize:    3,
+			MultiKeyMode:    constant.MultiKeyModeRandom,
+			MultiKeyRemarks: map[int]string{0: "first", 1: "second", 2: "third"},
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "delete_key",
+		"key_index":  1,
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success, response.Message)
+
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	require.Equal(t, "1:sk-a\n2:sk-c", stored.Key)
+	require.Equal(t, map[int]string{0: "first", 1: "third"}, stored.ChannelInfo.MultiKeyRemarks)
 }
 
 func TestSelectMultiKeyForTestUsesRequestedKeyIndex(t *testing.T) {

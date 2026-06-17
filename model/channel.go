@@ -68,6 +68,7 @@ type ChannelInfo struct {
 	MultiKeyErrorCode      map[int]string        `json:"multi_key_error_code,omitempty"`
 	MultiKeyErrorStatus    map[int]int           `json:"multi_key_error_status,omitempty"`
 	MultiKeyErrorReason    map[int]string        `json:"multi_key_error_reason,omitempty"`
+	MultiKeyRemarks        map[int]string        `json:"multi_key_remarks,omitempty"`
 	MultiKeyMode           constant.MultiKeyMode `json:"multi_key_mode"`
 }
 
@@ -296,6 +297,7 @@ func (info *ChannelInfo) RemapMultiKeyState(oldKeys []string, newKeys []string) 
 	info.MultiKeyErrorStatus = remapInt(info.MultiKeyErrorStatus)
 	info.MultiKeyErrorCode = remapString(info.MultiKeyErrorCode)
 	info.MultiKeyErrorReason = remapString(info.MultiKeyErrorReason)
+	info.MultiKeyRemarks = remapString(info.MultiKeyRemarks)
 	info.MultiKeySize = len(newKeys)
 	if info.MultiKeyPollingIndex >= len(newKeys) {
 		info.MultiKeyPollingIndex = 0
@@ -730,6 +732,13 @@ func (channel *Channel) Update() error {
 			for idx := range channel.ChannelInfo.MultiKeyErrorReason {
 				if idx >= channel.ChannelInfo.MultiKeySize {
 					delete(channel.ChannelInfo.MultiKeyErrorReason, idx)
+				}
+			}
+		}
+		if channel.ChannelInfo.MultiKeyRemarks != nil {
+			for idx := range channel.ChannelInfo.MultiKeyRemarks {
+				if idx >= channel.ChannelInfo.MultiKeySize {
+					delete(channel.ChannelInfo.MultiKeyRemarks, idx)
 				}
 			}
 		}
