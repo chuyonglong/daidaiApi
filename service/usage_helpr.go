@@ -31,3 +31,39 @@ func ResponseText2Usage(c *gin.Context, responseText string, modeName string, pr
 func ValidUsage(usage *dto.Usage) bool {
 	return usage != nil && (usage.PromptTokens != 0 || usage.CompletionTokens != 0)
 }
+
+func extractQuotaDataTokens(usage *dto.Usage) (promptTokenUsed int, cacheTokenUsed int) {
+	if usage == nil {
+		return 0, 0
+	}
+	promptTokenUsed = usage.InputTokens
+	if promptTokenUsed <= 0 {
+		promptTokenUsed = usage.PromptTokens
+	}
+	isAnthropicSemantic := usage.UsageSource == "anthropic" ||
+		usage.UsageSemantic == "anthropic" ||
+		usage.ClaudeCacheCreation5mTokens > 0 ||
+		usage.ClaudeCacheCreation1hTokens > 0
+	if usage.InputTokens <= 0 && isAnthropicSemantic {
+		cacheCreationTokens := usage.PromptTokensDetails.CachedCreationTokens
+		splitCacheCreationTokens := usage.ClaudeCacheCreation5mTokens + usage.ClaudeCacheCreation1hTokens
+		if splitCacheCreationTokens > cacheCreationTokens {
+			cacheCreationTokens = splitCacheCreationTokens
+		}
+		promptTokenUsed = usage.PromptTokens + usage.PromptTokensDetails.CachedTokens + cacheCreationTokens
+	}
+	cacheTokenUsed = usage.PromptTokensDetails.CachedTokens
+	if cacheTokenUsed == 0 && usage.InputTokensDetails != nil {
+		cacheTokenUsed = usage.InputTokensDetails.CachedTokens
+	}
+	return promptTokenUsed, cacheTokenUsed
+}
+
+func extractRealtimeQuotaDataTokens(usage *dto.RealtimeUsage) (promptTokenUsed int, cacheTokenUsed int) {
+	if usage == nil {
+		return 0, 0
+	}
+	promptTokenUsed = usage.InputTokens
+	cacheTokenUsed = usage.InputTokenDetails.CachedTokens
+	return promptTokenUsed, cacheTokenUsed
+}

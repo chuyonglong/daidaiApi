@@ -1987,6 +1987,8 @@
     "History of Midjourney-style image tasks.": "History of Midjourney-style image tasks.",
     "Hit criteria: If cached tokens exist in usage, it counts as a hit.": "Hit criteria: If cached tokens exist in usage, it counts as a hit.",
     "Hit Rate": "Hit Rate",
+    "Cache Hit Rate": "Cache Hit Rate",
+    "Cached input tokens / input tokens": "Cached input tokens / input tokens",
     "Hit tier": "Hit tier",
     "Home": "Home",
     "Home Page Content": "Home Page Content",

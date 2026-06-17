@@ -79,6 +79,14 @@ export function useModelStatCardsConfig(): StatCardConfig[] {
       getValue: (stat, timeRangeMinutes = 1) =>
         safeDivide(stat?.tpm ?? 0, timeRangeMinutes),
     },
+    {
+      key: 'cacheHitRate',
+      title: t('Cache Hit Rate'),
+      description: t('Cached input tokens / input tokens'),
+      icon: Gauge,
+      getValue: (stat) =>
+        safeDivide(stat?.cacheTokenUsed ?? 0, stat?.promptTokenUsed ?? 0) * 100,
+    },
   ]
 }
 

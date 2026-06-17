@@ -1987,6 +1987,8 @@
     "History of Midjourney-style image tasks.": "История задач генерации изображений в стиле Midjourney.",
     "Hit criteria: If cached tokens exist in usage, it counts as a hit.": "Критерий попадания: если в usage есть кэшированные токены, это считается попаданием.",
     "Hit Rate": "Частота попаданий",
+    "Cache Hit Rate": "Доля попаданий в кэш",
+    "Cached input tokens / input tokens": "Кэшированные входные токены / входные токены",
     "Hit tier": "Совпавший уровень",
     "Home": "Главная",
     "Home Page Content": "Содержимое главной страницы",

@@ -1987,6 +1987,8 @@
     "History of Midjourney-style image tasks.": "Midjourney 风格图像任务历史。",
     "Hit criteria: If cached tokens exist in usage, it counts as a hit.": "命中判定：usage 中存在 cached tokens 即视为命中。",
     "Hit Rate": "命中率",
+    "Cache Hit Rate": "缓存命中率",
+    "Cached input tokens / input tokens": "缓存输入 tokens / 输入 tokens",
     "Hit tier": "命中档位",
     "Home": "主页",
     "Home Page Content": "首页内容",

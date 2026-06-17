@@ -172,6 +172,52 @@ func TestCacheWriteTokensTotal(t *testing.T) {
 	})
 }
 
+func TestExtractQuotaDataTokensUsesInputTokensWhenAvailable(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens: 100,
+		InputTokens:  180,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         30,
+			CachedCreationTokens: 50,
+		},
+	}
+
+	promptTokenUsed, cacheTokenUsed := extractQuotaDataTokens(usage)
+
+	require.Equal(t, 180, promptTokenUsed)
+	require.Equal(t, 30, cacheTokenUsed)
+}
+
+func TestExtractQuotaDataTokensReconstructsAnthropicInputTokens(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens: 100,
+		UsageSource:  "anthropic",
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         30,
+			CachedCreationTokens: 50,
+		},
+	}
+
+	promptTokenUsed, cacheTokenUsed := extractQuotaDataTokens(usage)
+
+	require.Equal(t, 180, promptTokenUsed)
+	require.Equal(t, 30, cacheTokenUsed)
+}
+
+func TestExtractQuotaDataTokensDoesNotCountCacheCreationAsHit(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens: 100,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedCreationTokens: 50,
+		},
+	}
+
+	promptTokenUsed, cacheTokenUsed := extractQuotaDataTokens(usage)
+
+	require.Equal(t, 100, promptTokenUsed)
+	require.Equal(t, 0, cacheTokenUsed)
+}
+
 func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

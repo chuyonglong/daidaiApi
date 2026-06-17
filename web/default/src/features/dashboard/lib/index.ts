@@ -36,5 +36,10 @@ export {
   getDefaultPingStatus,
 } from './api-info'
 export { processChartData, processUserChartData } from './charts'
-export { safeDivide, calculateDashboardStats } from './stats'
+export {
+  safeDivide,
+  calculateDashboardStats,
+  calculateCacheHitRatePercent,
+  formatCacheHitRateDisplay,
+} from './stats'
 export { getPreviewText } from './text'

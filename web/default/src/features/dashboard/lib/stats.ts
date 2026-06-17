@@ -41,7 +41,49 @@ export function calculateDashboardStats(data: QuotaDataItem[]) {
       totalQuota: acc.totalQuota + (Number(item.quota) || 0),
       totalCount: acc.totalCount + (Number(item.count) || 0),
       totalTokens: acc.totalTokens + (Number(item.token_used) || 0),
+      totalPromptTokens:
+        acc.totalPromptTokens + (Number(item.prompt_token_used) || 0),
+      totalCacheTokens:
+        acc.totalCacheTokens + (Number(item.cache_token_used) || 0),
     }),
-    { totalQuota: 0, totalCount: 0, totalTokens: 0 }
+    {
+      totalQuota: 0,
+      totalCount: 0,
+      totalTokens: 0,
+      totalPromptTokens: 0,
+      totalCacheTokens: 0,
+    }
   )
+}
+
+export function calculateCacheHitRatePercent(
+  cacheTokens: number,
+  promptTokens: number
+): number {
+  return safeDivide(cacheTokens * 100, promptTokens, 2)
+}
+
+export function formatCacheHitRateDisplay(params: {
+  loading: boolean
+  promptTokens: number
+  cacheTokens: number
+}) {
+  if (params.loading) {
+    return {
+      value: '查询中',
+      description: '正在查询',
+    }
+  }
+
+  if (params.promptTokens === 0) {
+    return {
+      value: '0/0',
+      description: '缓存输入 tokens / 输入 tokens',
+    }
+  }
+
+  return {
+    value: `${calculateCacheHitRatePercent(params.cacheTokens, params.promptTokens)}%`,
+    description: `${params.cacheTokens}/${params.promptTokens}`,
+  }
 }

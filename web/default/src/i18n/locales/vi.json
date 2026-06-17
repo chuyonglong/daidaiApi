@@ -1987,6 +1987,8 @@
     "History of Midjourney-style image tasks.": "Lịch sử các tác vụ hình ảnh kiểu Midjourney.",
     "Hit criteria: If cached tokens exist in usage, it counts as a hit.": "Tiêu chí trúng: Nếu cached tokens tồn tại trong usage, được tính là trúng.",
     "Hit Rate": "Tỷ lệ trúng",
+    "Cache Hit Rate": "Tỷ lệ trúng cache",
+    "Cached input tokens / input tokens": "Token đầu vào đã cache / token đầu vào",
     "Hit tier": "Bậc trúng",
     "Home": "Trang chủ",
     "Home Page Content": "Nội dung Trang chủ",

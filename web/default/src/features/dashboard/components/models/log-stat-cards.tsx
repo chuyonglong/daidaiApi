@@ -26,6 +26,7 @@ import { useModelStatCardsConfig } from '@/features/dashboard/hooks/use-dashboar
 import {
   buildQueryParams,
   calculateDashboardStats,
+  formatCacheHitRateDisplay,
   getDefaultDays,
 } from '@/features/dashboard/lib'
 import type {
@@ -46,6 +47,8 @@ export function LogStatCards(props: LogStatCardsProps) {
     totalQuota: number
     totalCount: number
     totalTokens: number
+    totalPromptTokens: number
+    totalCacheTokens: number
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -98,21 +101,32 @@ export function LogStatCards(props: LogStatCardsProps) {
     rpm: stats?.totalCount ?? 0,
     quota: stats?.totalQuota ?? 0,
     tpm: stats?.totalTokens ?? 0,
+    promptTokenUsed: stats?.totalPromptTokens ?? 0,
+    cacheTokenUsed: stats?.totalCacheTokens ?? 0,
   }
 
+  const cacheHitRateDisplay = formatCacheHitRateDisplay({
+    loading,
+    promptTokens: adaptedStats.promptTokenUsed,
+    cacheTokens: adaptedStats.cacheTokenUsed,
+  })
+
   const items = statCardsConfig.map((config) => ({
+    key: config.key,
     title: config.title,
     value:
       config.key === 'quota'
         ? formatQuota(config.getValue(adaptedStats, timeRangeMinutes))
+        : config.key === 'cacheHitRate'
+          ? cacheHitRateDisplay.value
         : formatNumber(config.getValue(adaptedStats, timeRangeMinutes)),
-    desc: config.description,
+    desc: config.key === 'cacheHitRate' ? cacheHitRateDisplay.description : config.description,
     icon: config.icon,
   }))
 
   return (
     <div className='overflow-hidden rounded-lg border'>
-      <div className='divide-border/60 grid grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-5'>
+      <div className='divide-border/60 grid grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-6'>
         {items.map((it, idx) => {
           const Icon = it.icon
           return (
@@ -127,7 +141,7 @@ export function LogStatCards(props: LogStatCardsProps) {
                 </div>
               </div>
 
-              {loading ? (
+              {loading && it.key !== 'cacheHitRate' ? (
                 <div className='mt-2 space-y-1.5'>
                   <Skeleton className='h-7 w-20' />
                   <Skeleton className='h-3.5 w-28' />
