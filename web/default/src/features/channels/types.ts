@@ -292,6 +292,9 @@ export interface GetChannelsParams {
   group?: string
   id_sort?: boolean
   tag_mode?: boolean
+  include_usage?: boolean
+  start_timestamp?: number
+  end_timestamp?: number
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
 }
@@ -304,6 +307,9 @@ export interface SearchChannelsParams {
   type?: number
   id_sort?: boolean
   tag_mode?: boolean
+  include_usage?: boolean
+  start_timestamp?: number
+  end_timestamp?: number
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
   p?: number

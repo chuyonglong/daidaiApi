@@ -51,6 +51,7 @@ import {
   handleTestAllChannels,
   handleUpdateAllBalances,
 } from '../lib'
+import { ChannelUsedAmountPreferences } from './channel-used-amount-preferences'
 import { useChannels } from './channels-provider'
 
 export function ChannelsPrimaryButtons() {
@@ -61,6 +62,8 @@ export function ChannelsPrimaryButtons() {
     setEnableTagMode,
     idSort,
     setIdSort,
+    usedAmountPreferences,
+    setUsedAmountPreferences,
     upstream,
   } = useChannels()
   const queryClient = useQueryClient()
@@ -103,6 +106,11 @@ export function ChannelsPrimaryButtons() {
             onCheckedChange={handleIdSortToggle}
           />
         </div>
+
+        <ChannelUsedAmountPreferences
+          preferences={usedAmountPreferences}
+          onPreferencesChange={setUsedAmountPreferences}
+        />
 
         {/* Create Channel */}
         <Button onClick={() => setOpen('create-channel')} size='sm'>

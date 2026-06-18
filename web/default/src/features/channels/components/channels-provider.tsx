@@ -20,7 +20,12 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { createContext, useContext, useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useChannelUpstreamUpdates } from '../hooks/use-channel-upstream-updates'
-import { channelsQueryKeys } from '../lib'
+import {
+  channelsQueryKeys,
+  getSavedChannelUsedAmountPreferences,
+  saveChannelUsedAmountPreferences,
+  type ChannelUsedAmountPreferences,
+} from '../lib'
 import type { Channel } from '../types'
 
 // ============================================================================
@@ -55,6 +60,10 @@ type ChannelsContextType = {
   setEnableTagMode: (enabled: boolean) => void
   idSort: boolean
   setIdSort: (enabled: boolean) => void
+  usedAmountPreferences: ChannelUsedAmountPreferences
+  setUsedAmountPreferences: (
+    preferences: ChannelUsedAmountPreferences
+  ) => void
   upstream: UpstreamUpdateState
 }
 
@@ -80,12 +89,24 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
   const [idSort, setIdSort] = useState(() => {
     return localStorage.getItem('channels-id-sort') === 'true'
   })
+  const [usedAmountPreferences, setUsedAmountPreferencesState] =
+    useState<ChannelUsedAmountPreferences>(() =>
+      getSavedChannelUsedAmountPreferences()
+    )
 
   const queryClient = useQueryClient()
   const refreshChannels = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: channelsQueryKeys.all })
   }, [queryClient])
   const upstream = useChannelUpstreamUpdates(refreshChannels)
+  const setUsedAmountPreferences = useCallback(
+    (preferences: ChannelUsedAmountPreferences) => {
+      saveChannelUsedAmountPreferences(preferences)
+      setUsedAmountPreferencesState(preferences)
+      void refreshChannels()
+    },
+    [refreshChannels]
+  )
 
   return (
     <ChannelsContext.Provider
@@ -100,6 +121,8 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
         setEnableTagMode,
         idSort,
         setIdSort,
+        usedAmountPreferences,
+        setUsedAmountPreferences,
         upstream,
       }}
     >

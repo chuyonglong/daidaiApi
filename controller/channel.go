@@ -70,6 +70,49 @@ func clearChannelInfo(channel *model.Channel) {
 	}
 }
 
+func parseChannelUsageRange(c *gin.Context) (bool, int64, int64) {
+	includeUsage, _ := strconv.ParseBool(c.Query("include_usage"))
+	if !includeUsage {
+		return false, 0, 0
+	}
+
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	if startTimestamp < 0 {
+		startTimestamp = 0
+	}
+	if endTimestamp < 0 {
+		endTimestamp = 0
+	}
+	return true, startTimestamp, endTimestamp
+}
+
+func applyChannelUsageRange(channels []*model.Channel, startTimestamp, endTimestamp int64) error {
+	if len(channels) == 0 {
+		return nil
+	}
+
+	channelIDs := make([]int, 0, len(channels))
+	for _, channel := range channels {
+		if channel != nil && channel.Id > 0 {
+			channelIDs = append(channelIDs, channel.Id)
+		}
+	}
+
+	quotaByChannel, err := model.SumChannelUsedQuotaByRange(channelIDs, startTimestamp, endTimestamp)
+	if err != nil {
+		return err
+	}
+
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		channel.UsedQuota = quotaByChannel[channel.Id]
+	}
+	return nil
+}
+
 func GetAllChannels(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)
@@ -79,6 +122,7 @@ func GetAllChannels(c *gin.Context) {
 	statusParam := c.Query("status")
 	// statusFilter: -1 all, 1 enabled, 0 disabled (include auto & manual)
 	statusFilter := parseStatusFilter(statusParam)
+	includeUsage, usageStartTimestamp, usageEndTimestamp := parseChannelUsageRange(c)
 	// type filter
 	typeStr := c.Query("type")
 	typeFilter := -1
@@ -138,6 +182,13 @@ func GetAllChannels(c *gin.Context) {
 		if err != nil {
 			common.SysError("failed to get channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道列表失败，请稍后重试"})
+			return
+		}
+	}
+
+	if includeUsage {
+		if err := applyChannelUsageRange(channelData, usageStartTimestamp, usageEndTimestamp); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 			return
 		}
 	}
@@ -249,6 +300,7 @@ func SearchChannels(c *gin.Context) {
 	modelKeyword := c.Query("model")
 	statusParam := c.Query("status")
 	statusFilter := parseStatusFilter(statusParam)
+	includeUsage, usageStartTimestamp, usageEndTimestamp := parseChannelUsageRange(c)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
@@ -340,6 +392,13 @@ func SearchChannels(c *gin.Context) {
 	}
 
 	pagedData := channelData[startIdx:endIdx]
+
+	if includeUsage {
+		if err := applyChannelUsageRange(pagedData, usageStartTimestamp, usageEndTimestamp); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+	}
 
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)

@@ -454,6 +454,52 @@ type Stat struct {
 	Tpm   int `json:"tpm"`
 }
 
+func SumChannelUsedQuotaByRange(channelIDs []int, startTimestamp int64, endTimestamp int64) (map[int]int64, error) {
+	quotaByChannel := make(map[int]int64, len(channelIDs))
+	if len(channelIDs) == 0 {
+		return quotaByChannel, nil
+	}
+
+	for _, channelID := range channelIDs {
+		if channelID > 0 {
+			quotaByChannel[channelID] = 0
+		}
+	}
+	if len(quotaByChannel) == 0 {
+		return quotaByChannel, nil
+	}
+
+	ids := make([]int, 0, len(quotaByChannel))
+	for channelID := range quotaByChannel {
+		ids = append(ids, channelID)
+	}
+
+	type channelQuotaRow struct {
+		ChannelID int   `gorm:"column:channel_id"`
+		Quota     int64 `gorm:"column:quota"`
+	}
+	var rows []channelQuotaRow
+	query := LOG_DB.Model(&Log{}).
+		Select("channel_id, COALESCE(SUM(quota), 0) AS quota").
+		Where("type = ? AND channel_id IN ?", LogTypeConsume, ids)
+	if startTimestamp != 0 {
+		query = query.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		query = query.Where("created_at <= ?", endTimestamp)
+	}
+
+	if err := query.Group("channel_id").Scan(&rows).Error; err != nil {
+		common.SysError("failed to sum channel used quota: " + err.Error())
+		return quotaByChannel, errors.New("查询渠道用量统计失败")
+	}
+
+	for _, row := range rows {
+		quotaByChannel[row.ChannelID] = row.Quota
+	}
+	return quotaByChannel, nil
+}
+
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("sum(quota) quota")
 

@@ -36,7 +36,7 @@ import {
   renderTieredModelPriceSimple,
 } from '../../../helpers';
 import { IconHelpCircle } from '@douyinfe/semi-icons';
-import { CircleAlert, Route, Sparkles } from 'lucide-react';
+import { Route, Sparkles } from 'lucide-react';
 
 const colors = [
   'amber',
@@ -164,7 +164,7 @@ function buildStreamStatusTooltip(ss, t) {
 }
 
 function renderIsStream(bool, t, streamStatus) {
-  const isError = streamStatus && streamStatus.status !== 'ok';
+  const isError = false;
 
   if (bool) {
     return (

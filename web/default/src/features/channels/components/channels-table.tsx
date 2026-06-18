@@ -48,6 +48,7 @@ import {
 import {
   channelsQueryKeys,
   aggregateChannelsByTag,
+  buildChannelUsedAmountParams,
   isTagAggregateRow,
   getChannelTypeIcon,
   getChannelTypeLabel,
@@ -76,7 +77,7 @@ function isDisabledChannelRow(channel: Channel) {
 
 export function ChannelsTable() {
   const { t } = useTranslation()
-  const { enableTagMode, idSort } = useChannels()
+  const { enableTagMode, idSort, usedAmountPreferences } = useChannels()
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   // Table state
@@ -116,8 +117,11 @@ export function ChannelsTable() {
   // Extract filters from column filters
   const statusFilter =
     (columnFilters.find((f) => f.id === 'status')?.value as string[]) || []
-  const typeFilter =
-    (columnFilters.find((f) => f.id === 'type')?.value as string[]) || []
+  const typeFilter = useMemo(
+    () =>
+      (columnFilters.find((f) => f.id === 'type')?.value as string[]) || [],
+    [columnFilters]
+  )
   const groupFilter =
     (columnFilters.find((f) => f.id === 'group')?.value as string[]) || []
   const modelFilterFromUrl =
@@ -164,6 +168,11 @@ export function ChannelsTable() {
     } as const
   }, [sorting])
 
+  const usedAmountParams = useMemo(
+    () => buildChannelUsedAmountParams(usedAmountPreferences),
+    [usedAmountPreferences]
+  )
+
   const handleSortingChange: OnChangeFn<SortingState> = (updater) => {
     setSorting((previous) => {
       const next = typeof updater === 'function' ? updater(previous) : updater
@@ -209,6 +218,7 @@ export function ChannelsTable() {
           : undefined,
       tag_mode: enableTagMode,
       id_sort: idSort,
+      ...usedAmountParams,
       ...sortParams,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
@@ -232,6 +242,7 @@ export function ChannelsTable() {
               : undefined,
           tag_mode: enableTagMode,
           id_sort: idSort,
+          ...usedAmountParams,
           ...sortParams,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
@@ -252,6 +263,7 @@ export function ChannelsTable() {
               : undefined,
           tag_mode: enableTagMode,
           id_sort: idSort,
+          ...usedAmountParams,
           ...sortParams,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,

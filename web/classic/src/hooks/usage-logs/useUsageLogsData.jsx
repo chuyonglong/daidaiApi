@@ -533,7 +533,7 @@ export const useLogsData = () => {
           value: other.request_path,
         });
       }
-      if (isAdminUser && other?.stream_status) {
+      if (false && isAdminUser && other?.stream_status) {
         const ss = other.stream_status;
         const isOk = ss.status === 'ok';
         const statusLabel = isOk ? '✓ ' + t('正常') : '✗ ' + t('异常');
