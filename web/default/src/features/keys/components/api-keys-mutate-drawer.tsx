@@ -28,6 +28,7 @@ import {
   ChevronDown,
   KeyRound,
   Settings2,
+  Shuffle,
   WalletCards,
   type LucideIcon,
 } from 'lucide-react'
@@ -71,6 +72,8 @@ import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
   apiKeyFormSchema,
   type ApiKeyFormValues,
+  generateApiKeyName,
+  generateRandomSuffix,
   getApiKeyFormDefaultValues,
   transformFormDataToPayload,
   transformApiKeyToFormDefaults,
@@ -223,7 +226,7 @@ export function ApiKeysMutateDrawer({
               name:
                 i === 0 && data.name
                   ? data.name
-                  : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
+                  : `${data.name || 'default'}-${generateRandomSuffix(6)}`,
             })
             if (result.success) {
               successCount++
@@ -268,6 +271,13 @@ export function ApiKeysMutateDrawer({
       setIsSubmitting
     )
   }, [form.handleSubmit, onSubmit, onInvalidSubmit])
+
+  const handleRandomName = useCallback(() => {
+    form.setValue('name', generateApiKeyName(), {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+  }, [form])
 
   const handleSetExpiry = (months: number, days: number, hours: number) => {
     if (months === 0 && days === 0 && hours === 0) {
@@ -336,7 +346,19 @@ export function ApiKeysMutateDrawer({
                   <FormItem>
                     <FormLabel>{t('Name')}</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder={t('Enter a name')} />
+                      <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
+                        <Input {...field} placeholder={t('Enter a name')} />
+                        {!isUpdate && (
+                          <Button
+                            type='button'
+                            variant='outline'
+                            onClick={handleRandomName}
+                          >
+                            <Shuffle data-icon='inline-start' />
+                            {t('Random name')}
+                          </Button>
+                        )}
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

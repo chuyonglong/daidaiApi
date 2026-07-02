@@ -3204,6 +3204,7 @@
     "Quota:": "Quota:",
     "Radius": "圆角",
     "Random": "随机",
+    "Random name": "随机名称",
     "Randomly select a key from the pool for each request": "每次请求从池中随机选择一个密钥",
     "Ranking data is currently simulated for preview purposes and will be replaced with live analytics once the backend integration ships.": "当前排行榜数据为预览用模拟数据，后端集成完成后将替换为真实分析数据。",
     "Rankings": "排行榜",

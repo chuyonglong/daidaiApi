@@ -18,7 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { apiKeyFormSchema, type ApiKeyFormValues } from '../lib'
+import {
+  apiKeyFormSchema,
+  generateApiKeyName,
+  generateRandomSuffix,
+  type ApiKeyFormValues,
+} from '../lib'
 import { submitApiKeyForm } from '../lib/api-key-submit'
 
 function createFormValues(): ApiKeyFormValues {
@@ -119,5 +124,30 @@ describe('apiKeyFormSchema', () => {
     if (result.success) {
       assert.equal(result.data.expired_time, undefined)
     }
+  })
+})
+
+describe('API key random naming', () => {
+  test('generates a readable Chinese name from deterministic word indexes', () => {
+    const indexes = [0, 1]
+    const result = generateApiKeyName({
+      nextInt: () => indexes.shift() ?? 0,
+    })
+
+    assert.equal(result, '逸弄星河')
+  })
+
+  test('generates an alphanumeric suffix with the requested length', () => {
+    const indexes = [0, 1, 35, 10, 11, 12]
+    const result = generateRandomSuffix(6, {
+      nextInt: () => indexes.shift() ?? 0,
+    })
+
+    assert.equal(result, '01zabc')
+    assert.match(result, /^[a-z0-9]{6}$/)
+  })
+
+  test('returns an empty suffix when the requested length is zero', () => {
+    assert.equal(generateRandomSuffix(0), '')
   })
 })
