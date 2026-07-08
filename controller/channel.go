@@ -529,6 +529,50 @@ func validateTwoFactorAuth(twoFA *model.TwoFA, code string) bool {
 	return false
 }
 
+func validateCodexOAuthKeyObject(raw string) error {
+	trimmedKey := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmedKey, "{") {
+		return fmt.Errorf("Codex key must be a valid JSON object")
+	}
+	var keyMap map[string]any
+	if err := common.Unmarshal([]byte(trimmedKey), &keyMap); err != nil {
+		return fmt.Errorf("Codex key must be a valid JSON object")
+	}
+	if v, ok := keyMap["access_token"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
+		return fmt.Errorf("Codex key JSON must include access_token")
+	}
+	if v, ok := keyMap["account_id"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
+		return fmt.Errorf("Codex key JSON must include account_id")
+	}
+	return nil
+}
+
+func validateCodexKey(channel *model.Channel, isAdd bool) error {
+	trimmedKey := strings.TrimSpace(channel.Key)
+	if !isAdd && trimmedKey == "" {
+		return nil
+	}
+	if trimmedKey == "" {
+		return fmt.Errorf("Codex key must be a valid JSON object")
+	}
+	if strings.HasPrefix(trimmedKey, "[") {
+		return fmt.Errorf("Codex key must be a valid JSON object")
+	}
+	if !channel.ChannelInfo.IsMultiKey {
+		return validateCodexOAuthKeyObject(trimmedKey)
+	}
+	keys := channel.GetKeys()
+	if len(keys) == 0 {
+		return fmt.Errorf("Codex multi-key channel must include at least one key")
+	}
+	for i, key := range keys {
+		if err := validateCodexOAuthKeyObject(key); err != nil {
+			return fmt.Errorf("Codex key %d: %w", i+1, err)
+		}
+	}
+	return nil
+}
+
 // validateChannel 通用的渠道校验函数
 func validateChannel(channel *model.Channel, isAdd bool) error {
 	// 校验 channel settings
@@ -566,23 +610,9 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
-	// Codex OAuth key validation (optional, only when JSON object is provided)
 	if channel.Type == constant.ChannelTypeCodex {
-		trimmedKey := strings.TrimSpace(channel.Key)
-		if isAdd || trimmedKey != "" {
-			if !strings.HasPrefix(trimmedKey, "{") {
-				return fmt.Errorf("Codex key must be a valid JSON object")
-			}
-			var keyMap map[string]any
-			if err := common.Unmarshal([]byte(trimmedKey), &keyMap); err != nil {
-				return fmt.Errorf("Codex key must be a valid JSON object")
-			}
-			if v, ok := keyMap["access_token"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
-				return fmt.Errorf("Codex key JSON must include access_token")
-			}
-			if v, ok := keyMap["account_id"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
-				return fmt.Errorf("Codex key JSON must include account_id")
-			}
+		if err := validateCodexKey(channel, isAdd); err != nil {
+			return err
 		}
 	}
 
@@ -837,12 +867,10 @@ func AddChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-
-	// 使用统一的校验函数
-	if err := validateChannel(addChannelRequest.Channel, true); err != nil {
+	if addChannelRequest.Channel == nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": err.Error(),
+			"message": "channel cannot be empty",
 		})
 		return
 	}
@@ -915,7 +943,21 @@ func AddChannel(c *gin.Context) {
 			}
 			localChannel.Name = fmt.Sprintf("%s %s", localChannel.Name, keyPrefix)
 		}
+		if err := validateChannel(localChannel, true); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 		channels = append(channels, *localChannel)
+	}
+	if len(channels) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "key cannot be empty",
+		})
+		return
 	}
 	err = model.BatchInsertChannels(channels)
 	if err != nil {
@@ -1126,14 +1168,6 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
-	// 使用统一的校验函数
-	if err := validateChannel(&channel.Channel, false); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
 	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
 	originChannel, err := model.GetChannelById(channel.Id, true)
 	if err != nil {
@@ -1265,6 +1299,13 @@ func UpdateChannel(c *gin.Context) {
 		newKeys := channel.GetKeys()
 		channel.Key = model.FormatMultiKeyLines(newKeys)
 		channel.ChannelInfo.RemapMultiKeyState(oldKeys, newKeys)
+	}
+	if err := validateChannel(&channel.Channel, false); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
 	}
 	err = channel.Update()
 	if err != nil {
@@ -1592,6 +1633,35 @@ type multiKeyUsageStat struct {
 	CompletionTokens int
 }
 
+func maskedKeyPreview(key string) string {
+	keyPreview := key
+	if len(keyPreview) > 10 {
+		keyPreview = keyPreview[:10] + "..."
+	}
+	return keyPreview
+}
+
+func codexAccountIDPreview(key string) (string, bool) {
+	var keyMap map[string]any
+	if err := common.Unmarshal([]byte(strings.TrimSpace(key)), &keyMap); err != nil {
+		return "", false
+	}
+	accountID := strings.TrimSpace(fmt.Sprintf("%v", keyMap["account_id"]))
+	if accountID == "" || accountID == "<nil>" {
+		return "", false
+	}
+	return accountID, true
+}
+
+func multiKeyPreview(channelType int, key string) string {
+	if channelType == constant.ChannelTypeCodex {
+		if accountID, ok := codexAccountIDPreview(key); ok {
+			return accountID
+		}
+	}
+	return maskedKeyPreview(key)
+}
+
 var multiKeyReasonErrorCodePattern = regexp.MustCompile(`(?i)\b(?:status_code|error_code|status)\s*[:=]\s*([1-9][0-9]{2})\b`)
 
 func deriveMultiKeyErrorCodeFromReason(values ...string) string {
@@ -1830,11 +1900,7 @@ func ManageMultiKeys(c *gin.Context) {
 			}
 			usage := usageStats[i]
 
-			// Create key preview (first 10 chars)
-			keyPreview := key
-			if len(key) > 10 {
-				keyPreview = key[:10] + "..."
-			}
+			keyPreview := multiKeyPreview(channel.Type, key)
 
 			allKeyStatusList = append(allKeyStatusList, KeyStatus{
 				Index:            i,

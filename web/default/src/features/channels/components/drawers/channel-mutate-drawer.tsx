@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  type ChangeEvent,
   type ReactNode,
   useEffect,
   useState,
@@ -49,6 +50,7 @@ import {
   Server,
   Settings,
   SlidersHorizontal,
+  Upload,
   Wand2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -147,7 +149,9 @@ import {
   hasModelConfigChanged,
   findMissingModelsInMapping,
   getDefaultBaseUrl,
+  parseCodexCredentialBatch,
   validateModelMappingJson,
+  type CodexAuthImportKind,
 } from '../../lib'
 import {
   collectInvalidStatusCodeEntries,
@@ -480,6 +484,8 @@ export function ChannelMutateDrawer({
   const [codexOAuthDialogOpen, setCodexOAuthDialogOpen] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
+  const [codexAuthImportKind, setCodexAuthImportKind] =
+    useState<CodexAuthImportKind>('auth')
   const initialModelsRef = useRef<string[]>([])
   const initialModelMappingRef = useRef<string>('')
   const initialStatusCodeMappingRef = useRef<string>('')
@@ -1022,6 +1028,83 @@ export function ChannelMutateDrawer({
       setIsCodexCredentialRefreshing(false)
     }
   }, [channelId, queryClient, t])
+
+  const handleImportCodexAuthFiles = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files
+      const files = fileList ? Array.from(fileList) : []
+      event.target.value = ''
+
+      if (files.length === 0) {
+        toast.info(t('Please upload auth file(s)'))
+        return
+      }
+
+      const parsedFiles: Array<{ name: string; payload: unknown }> = []
+      const readFailures: string[] = []
+
+      for (const file of files) {
+        try {
+          const text = await file.text()
+          parsedFiles.push({ name: file.name, payload: JSON.parse(text) })
+        } catch {
+          readFailures.push(file.name)
+        }
+      }
+
+      const result = parseCodexCredentialBatch(parsedFiles, codexAuthImportKind)
+      const allFailures = [
+        ...readFailures.map((name) => ({
+          name,
+          reason: t('Failed to parse JSON'),
+        })),
+        ...result.failures,
+      ]
+
+      if (result.credentials.length > 0) {
+        form.setValue('key', result.keyText, {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+        form.setValue('multi_key_mode', 'multi_to_single', {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+        form.setValue('multi_key_type', 'random', {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+
+        toast.success(
+          t('Imported {{count}} Codex credential(s)', {
+            count: result.credentials.length,
+          })
+        )
+      } else {
+        toast.error(t('No valid Codex credentials found'))
+      }
+
+      if (result.duplicateCount > 0) {
+        toast.info(
+          t('Skipped {{count}} duplicate account(s)', {
+            count: result.duplicateCount,
+          })
+        )
+      }
+
+      if (allFailures.length > 0) {
+        toast.error(
+          t('Failed {{count}} file(s): {{files}}', {
+            count: allFailures.length,
+            files: allFailures
+              .map((failure) => `${failure.name} (${failure.reason})`)
+              .join(', '),
+          })
+        )
+      }
+    },
+    [codexAuthImportKind, form, t]
+  )
 
   // Unified function to update models
   const updateModels = useCallback(
@@ -2404,6 +2487,63 @@ export function ChannelMutateDrawer({
                         )}
                       </AlertDescription>
                     </Alert>
+                    <div className='flex flex-col gap-3 rounded-md border border-dashed p-3'>
+                      <div className='flex flex-col gap-2 sm:flex-row sm:items-end'>
+                        <div className='flex min-w-40 flex-col gap-1.5'>
+                          <label className='text-sm font-medium'>
+                            {t('Auth file type')}
+                          </label>
+                          <Select
+                            items={[
+                              { value: 'auth', label: t('auth') },
+                              { value: 'cpa', label: t('cpa') },
+                            ]}
+                            value={codexAuthImportKind}
+                            onValueChange={(value) =>
+                              setCodexAuthImportKind(
+                                value as CodexAuthImportKind
+                              )
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent alignItemWithTrigger={false}>
+                              <SelectGroup>
+                                <SelectItem value='auth'>
+                                  {t('auth')}
+                                </SelectItem>
+                                <SelectItem value='cpa'>{t('cpa')}</SelectItem>
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className='flex flex-1 flex-col gap-1.5'>
+                          <label className='text-sm font-medium'>
+                            {t('Import auth files')}
+                          </label>
+                          <Input
+                            type='file'
+                            accept='.json,application/json'
+                            multiple
+                            onChange={handleImportCodexAuthFiles}
+                          />
+                        </div>
+                      </div>
+                      <p className='text-muted-foreground text-xs'>
+                        {t(
+                          'Upload multiple auth JSON files. Imported credentials will fill the key field and switch the channel to multi-key mode.'
+                        )}
+                      </p>
+                      <div className='text-muted-foreground flex items-center gap-2 text-xs'>
+                        <Upload className='h-3.5 w-3.5' />
+                        <span>
+                          {t(
+                            'Each valid file becomes one Codex account key, identified by account_id.'
+                          )}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
 

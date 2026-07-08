@@ -26,6 +26,11 @@ type listModelsResponse struct {
 	Object  string             `json:"object"`
 }
 
+type channelListModelsResponse struct {
+	Success bool               `json:"success"`
+	Data    []dto.OpenAIModels `json:"data"`
+}
+
 func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -154,6 +159,26 @@ func pricingByModelName(pricings []model.Pricing) map[string]model.Pricing {
 	return byName
 }
 
+func decodeChannelListModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder) []string {
+	t.Helper()
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload channelListModelsResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.True(t, payload.Success)
+
+	ids := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		ids = append(ids, item.Id)
+	}
+	return ids
+}
+
+func insertManagedModel(t *testing.T, mi *model.Model) {
+	t.Helper()
+	require.NoError(t, mi.Insert())
+}
+
 func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	withSelfUseModeDisabled(t)
 	withTieredBillingConfig(t, map[string]string{
@@ -208,6 +233,42 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, missingExprPricing.BillingMode)
 	require.Empty(t, missingExprPricing.BillingExpr)
+}
+
+func TestChannelListModelsReturnsEnabledManagedModelsSorted(t *testing.T) {
+	setupModelListControllerTestDB(t)
+	insertManagedModel(t, &model.Model{ModelName: "z-model", Status: 1, SyncOfficial: 1})
+	insertManagedModel(t, &model.Model{ModelName: "a-model", Status: 1, SyncOfficial: 1})
+	insertManagedModel(t, &model.Model{ModelName: "disabled-model", Status: 0, SyncOfficial: 1})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/channel/models", nil)
+
+	ChannelListModels(ctx)
+
+	ids := decodeChannelListModelsResponse(t, recorder)
+	require.Equal(t, []string{"a-model", "z-model"}, ids)
+}
+
+func TestChannelListModelsSkipsDeletedModelsAndHistoricalDuplicates(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+
+	legacy := model.Model{ModelName: "gpt-3.5-turbo", Status: 1, SyncOfficial: 1}
+	insertManagedModel(t, &legacy)
+	require.NoError(t, db.Delete(&legacy).Error)
+
+	insertManagedModel(t, &model.Model{ModelName: "gpt-3.5-turbo", Status: 1, SyncOfficial: 1})
+	insertManagedModel(t, &model.Model{ModelName: "gpt-4o", Status: 1, SyncOfficial: 1})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/channel/models", nil)
+
+	ChannelListModels(ctx)
+
+	ids := decodeChannelListModelsResponse(t, recorder)
+	require.Equal(t, []string{"gpt-3.5-turbo", "gpt-4o"}, ids)
 }
 
 func TestOpenAIModelCatalogIncludesXiaomiModels(t *testing.T) {

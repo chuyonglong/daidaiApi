@@ -157,3 +157,42 @@ func TestUpdateChannelRejectsInvalidMultiKeyMode(t *testing.T) {
 	require.False(t, response.Success)
 	require.Contains(t, response.Message, "multi-key mode")
 }
+
+func TestUpdateChannelSwitchesCodexSingleChannelToMultiKeyJSONLines(t *testing.T) {
+	channel := insertUpdateChannelFixture(t, model.Channel{
+		Type:   constant.ChannelTypeCodex,
+		Key:    `{"access_token":"at-existing","account_id":"acct-existing"}`,
+		Models: "gpt-5-codex",
+	})
+	isMultiKey := true
+	multiKeyMode := "polling"
+
+	ctx, recorder := newUpdateChannelContext(t, gin.H{
+		"id":             channel.Id,
+		"name":           "Codex updated",
+		"type":           constant.ChannelTypeCodex,
+		"key":            `{"access_token":"at-one","account_id":"acct-one"}` + "\n" + `{"access_token":"at-two","account_id":"acct-two"}`,
+		"models":         "gpt-5-codex",
+		"group":          "default",
+		"status":         common.ChannelStatusEnabled,
+		"auto_ban":       1,
+		"is_multi_key":   isMultiKey,
+		"multi_key_mode": multiKeyMode,
+		"key_mode":       "replace",
+	})
+
+	UpdateChannel(ctx)
+
+	response := decodeUpdateChannelResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	var stored model.Channel
+	require.NoError(t, model.DB.First(&stored, channel.Id).Error)
+	require.True(t, stored.ChannelInfo.IsMultiKey)
+	require.Equal(t, 2, stored.ChannelInfo.MultiKeySize)
+	require.Equal(t, constant.MultiKeyModePolling, stored.ChannelInfo.MultiKeyMode)
+	require.Equal(t, []string{
+		`{"access_token":"at-one","account_id":"acct-one"}`,
+		`{"access_token":"at-two","account_id":"acct-two"}`,
+	}, stored.GetKeys())
+}

@@ -248,9 +248,25 @@ func ListModels(c *gin.Context, modelType int) {
 }
 
 func ChannelListModels(c *gin.Context) {
+	modelNames, err := model.GetEnabledModelNames()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	models := make([]dto.OpenAIModels, 0, len(modelNames))
+	for _, modelName := range modelNames {
+		models = append(models, dto.OpenAIModels{
+			Id:      modelName,
+			Object:  "model",
+			Created: 1626777600,
+			OwnedBy: "managed",
+		})
+	}
+
 	c.JSON(200, gin.H{
 		"success": true,
-		"data":    openAIModels,
+		"data":    models,
 	})
 }
 

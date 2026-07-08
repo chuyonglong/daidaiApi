@@ -254,6 +254,81 @@ func TestManageMultiKeysReturnsInvalidKeyErrorSummary(t *testing.T) {
 	require.Equal(t, "认证失败", response.Data.Keys[0].ErrorReason)
 }
 
+func TestManageMultiKeysShowsCodexAccountIDAsKeyPreview(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "codex multi",
+		Type:   constant.ChannelTypeCodex,
+		Key:    `1:{"access_token":"at-one","account_id":"acct-one"}` + "\n" + `2:{"access_token":"at-two","account_id":"acct-two"}`,
+		Models: "gpt-5-codex",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 2,
+			MultiKeyMode: constant.MultiKeyModeRandom,
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "get_key_status",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Keys []struct {
+				KeyPreview string `json:"key_preview"`
+			} `json:"keys"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data.Keys, 2)
+	require.Equal(t, "acct-one", response.Data.Keys[0].KeyPreview)
+	require.Equal(t, "acct-two", response.Data.Keys[1].KeyPreview)
+}
+
+func TestManageMultiKeysFallsBackToMaskedPreviewForInvalidCodexKeyJSON(t *testing.T) {
+	db := setupChannelKeyScriptTestDB(t)
+	channel := model.Channel{
+		Name:   "codex invalid multi",
+		Type:   constant.ChannelTypeCodex,
+		Key:    "1:not-json-value",
+		Models: "gpt-5-codex",
+		Status: common.ChannelStatusEnabled,
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:   true,
+			MultiKeySize: 1,
+			MultiKeyMode: constant.MultiKeyModeRandom,
+		},
+	}
+	require.NoError(t, db.Create(&channel).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/channel/multi_key/manage", map[string]any{
+		"channel_id": channel.Id,
+		"action":     "get_key_status",
+	}, 1)
+
+	ManageMultiKeys(ctx)
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Keys []struct {
+				KeyPreview string `json:"key_preview"`
+			} `json:"keys"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data.Keys, 1)
+	require.Equal(t, "not-json-v...", response.Data.Keys[0].KeyPreview)
+}
+
 func TestManageMultiKeysDerivesErrorCodeFromDisabledReason(t *testing.T) {
 	db := setupChannelKeyScriptTestDB(t)
 	channel := model.Channel{

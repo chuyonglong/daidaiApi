@@ -291,3 +291,62 @@ func TestBatchCreateChannelsNormalizesMultiKeyRuntimeState(t *testing.T) {
 	require.Nil(t, channel.ChannelInfo.MultiKeyDisabledReason)
 	require.Nil(t, channel.ChannelInfo.MultiKeyDisabledTime)
 }
+
+func TestBatchCreateChannelsAcceptsCodexMultiKeyOAuthJSONLines(t *testing.T) {
+	db := setupChannelBatchCreateTestDB(t)
+
+	ctx, recorder := newBatchCreateChannelsContext(t, []model.Channel{
+		{
+			Name:   "Codex Multi",
+			Type:   constant.ChannelTypeCodex,
+			Key:    `{"access_token":"at-one","account_id":"acct-one"}` + "\n" + `{"access_token":"at-two","account_id":"acct-two","refresh_token":""}`,
+			Models: "gpt-5-codex",
+			ChannelInfo: model.ChannelInfo{
+				IsMultiKey:   true,
+				MultiKeyMode: constant.MultiKeyModeRandom,
+			},
+		},
+	})
+
+	BatchCreateChannels(ctx)
+
+	response := decodeBatchCreateChannelsResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	var channel model.Channel
+	require.NoError(t, db.First(&channel).Error)
+	require.True(t, channel.ChannelInfo.IsMultiKey)
+	require.Equal(t, 2, channel.ChannelInfo.MultiKeySize)
+	require.Equal(t, constant.MultiKeyModeRandom, channel.ChannelInfo.MultiKeyMode)
+	require.Equal(t, []string{
+		`{"access_token":"at-one","account_id":"acct-one"}`,
+		`{"access_token":"at-two","account_id":"acct-two","refresh_token":""}`,
+	}, channel.GetKeys())
+}
+
+func TestBatchCreateChannelsRejectsCodexMultiKeyMissingAccountID(t *testing.T) {
+	db := setupChannelBatchCreateTestDB(t)
+
+	ctx, recorder := newBatchCreateChannelsContext(t, []model.Channel{
+		{
+			Name:   "Codex Multi",
+			Type:   constant.ChannelTypeCodex,
+			Key:    `{"access_token":"at-one","account_id":"acct-one"}` + "\n" + `{"access_token":"at-two"}`,
+			Models: "gpt-5-codex",
+			ChannelInfo: model.ChannelInfo{
+				IsMultiKey:   true,
+				MultiKeyMode: constant.MultiKeyModeRandom,
+			},
+		},
+	})
+
+	BatchCreateChannels(ctx)
+
+	response := decodeBatchCreateChannelsResponse(t, recorder)
+	require.False(t, response.Success)
+	require.Contains(t, response.Message, "account_id")
+
+	var channelCount int64
+	require.NoError(t, db.Model(&model.Channel{}).Count(&channelCount).Error)
+	require.Zero(t, channelCount)
+}

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -107,6 +108,26 @@ func GetAllModels(offset int, limit int) ([]*Model, error) {
 	var models []*Model
 	err := DB.Order("id DESC").Offset(offset).Limit(limit).Find(&models).Error
 	return models, err
+}
+
+func GetEnabledModelNames() ([]string, error) {
+	var names []string
+	err := DB.Model(&Model{}).
+		Where("status = ? AND model_name <> ?", 1, "").
+		Pluck("model_name", &names).Error
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(names)
+	deduped := make([]string, 0, len(names))
+	for _, name := range names {
+		if len(deduped) > 0 && deduped[len(deduped)-1] == name {
+			continue
+		}
+		deduped = append(deduped, name)
+	}
+	return deduped, nil
 }
 
 func GetBoundChannelsByModelsMap(modelNames []string) (map[string][]BoundChannel, error) {
